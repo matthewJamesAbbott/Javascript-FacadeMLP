@@ -46,4 +46,4 @@ You'll need a modern web browser.
 2. Open `index.html` in your web browser.
 
 ## Vercel Link
-*Coming soon!* (Deploy your fork on [Vercel](https://vercel.com/) or use locally.)
+https://javascript-facade-mlp.vercel.app/
