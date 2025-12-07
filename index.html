@@ -1,0 +1,721 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Multi-Layer Perceptron Trainer with Layer Facade</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 2rem;
+        }
+        input, select, textarea, button {
+            margin: 0.5rem 0;
+        }
+        .section {
+            margin-bottom: 2rem;
+            border-bottom: 1px solid #ccc;
+            padding-bottom: 1rem;
+        }
+        label {
+            display: block;
+            margin-top: 0.5rem;
+        }
+        .results {
+            background-color: #f5f5f5;
+            padding: 1rem;
+            margin: 1rem 0;
+            border-radius: 5px;
+        }
+        .metric {
+            margin: 0.5rem 0;
+            font-weight: bold;
+        }
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            margin: 1rem 0;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+        th {
+            background-color: #f2f2f2;
+        }
+        .epoch-controls {
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        .epoch-info {
+            font-style: italic;
+            color: #666;
+            margin-top: 0.5rem;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Multi-Layer Perceptron Trainer with Layer Facade</h1>
+
+    <div class="section">
+        <h2>Network Configuration</h2>
+        <label>Input Size: <input type="number" id="inputSize" value="10" min="1"></label>
+        <label>Hidden Layer Sizes (comma separated): <input type="text" id="hiddenSizes" value="8,8,8"></label>
+        <label>Output Size: <input type="number" id="outputSize" value="3" min="1"></label>
+        <label>Hidden Layer Activation:
+            <select id="hiddenActivation">
+                <option value="sigmoid" selected>Sigmoid</option>
+                <option value="tanh">Tanh</option>
+                <option value="relu">ReLU</option>
+            </select>
+        </label>
+        <label>Output Layer Activation:
+            <select id="outputActivation">
+                <option value="softmax" selected>Softmax</option>
+                <option value="sigmoid">Sigmoid</option>
+                <option value="tanh">Tanh</option>
+                <option value="relu">ReLU</option>
+            </select>
+        </label>
+        <label>Learning Rate: <input type="number" id="learningRate" value="0.1" step="0.01" min="0.001"
+                max="1"></label>
+        <button onclick="createNetwork()">Create Network</button>
+        <span id="networkStatus" style="margin-left:1rem;"></span>
+    </div>
+
+    <div class="section">
+        <h2>Training Configuration</h2>
+        <div class="epoch-controls">
+            <label>Training Epochs:
+                <input type="number" id="trainingEpochs" value="50" min="1" max="10000" step="1">
+            </label>
+            <label>Validation Epochs:
+                <input type="number" id="validationEpochs" value="30" min="1" max="1000" step="1">
+            </label>
+            <label>Batch Size:
+                <select id="batchSize">
+                    <option value="1">1 (Online Learning)</option>
+                    <option value="32" selected>32</option>
+                    <option value="64">64</option>
+                    <option value="128">128</option>
+                    <option value="all">Full Batch</option>
+                </select>
+            </label>
+        </div>
+        <div class="epoch-info">
+            ℹ️ Training Epochs: Full passes through training data for regular training<br>
+            ℹ️ Validation Epochs: Epochs used for each fold in K-Fold cross-validation<br>
+            ℹ️ Batch Size: Number of samples processed before updating weights
+        </div>
+    </div>
+
+    <div class="section">
+        <h2>Load Training Data</h2>
+        <input type="file" id="csvFile" accept=".csv">
+        <button onclick="loadCSV()">Load CSV</button>
+        <span id="dataStatus"></span>
+        <br>
+        <label>Or paste CSV data:</label>
+        <textarea id="csvPaste" rows="5" cols="60"></textarea>
+        <button onclick="loadCSVText()">Load Pasted CSV</button>
+    </div>
+
+    <div class="section">
+        <h2>Generate Test Data</h2>
+        <label>Number of Samples per Class: <input type="number" id="samplesPerClass" value="2500" min="100"></label>
+        <button onclick="generateTestData()">Generate Test Data</button>
+        <span id="generateStatus"></span>
+    </div>
+
+    <div class="section">
+        <h2>Model Evaluation</h2>
+        <label>Number of Folds: <input type="number" id="numFolds" value="10" min="2" max="20"></label>
+        <button onclick="runKFoldValidation()">Run K-Fold Cross Validation</button>
+        <button onclick="runAllMetrics()">Run All Evaluation Metrics</button>
+        <div id="evaluationResults"></div>
+    </div>
+
+    <div class="section">
+        <h2>Save/Load Model</h2>
+        <button onclick="saveModel()">Save Model</button>
+        <button onclick="loadModel()">Load Model</button>
+        <input type="file" id="modelFile" accept=".json">
+        <span id="modelStatus"></span>
+    </div>
+
+    <div class="section">
+        <h2>Train Network</h2>
+        <button onclick="trainNetwork()">Train Network</button>
+        <button onclick="trainNetworkWithProgress()">Train with Progress</button>
+        <div id="trainStatus"></div>
+        <div id="trainingProgress"></div>
+    </div>
+
+    <div class="section">
+        <h2>Predict</h2>
+        <label>Input (comma separated): <input type="text" id="predictInput"
+                value="0.19,0.21,0.32,0.43,0.54,0.65,0.77,0.88,0.99,0.01"></label>
+        <button onclick="predictInput()">Predict</button>
+        <div id="predictOutput"></div>
+    </div>
+
+    <script>
+        // ---- Layer Facade implementation added section ----
+
+        function LayerFacade(inputLayer, hiddenLayers, outputLayer) {
+            this.layers = [inputLayer].concat(hiddenLayers).concat([outputLayer]);
+        }
+        LayerFacade.prototype.getNeuronOutput = function (layerIdx, neuronIdx) {
+            return this.layers[layerIdx].neurons[neuronIdx].output;
+        };
+        LayerFacade.prototype.setNeuronOutput = function (layerIdx, neuronIdx, val) {
+            this.layers[layerIdx].neurons[neuronIdx].output = val;
+        };
+        LayerFacade.prototype.getNeuronError = function (layerIdx, neuronIdx) {
+            return this.layers[layerIdx].neurons[neuronIdx].error;
+        };
+        LayerFacade.prototype.setNeuronError = function (layerIdx, neuronIdx, val) {
+            this.layers[layerIdx].neurons[neuronIdx].error = val;
+        };
+        LayerFacade.prototype.getNeuronBias = function (layerIdx, neuronIdx) {
+            return this.layers[layerIdx].neurons[neuronIdx].bias;
+        };
+        LayerFacade.prototype.setNeuronBias = function (layerIdx, neuronIdx, val) {
+            this.layers[layerIdx].neurons[neuronIdx].bias = val;
+        };
+        LayerFacade.prototype.getNeuronWeight = function (layerIdx, neuronIdx, weightIdx) {
+            return this.layers[layerIdx].neurons[neuronIdx].weights[weightIdx];
+        };
+        LayerFacade.prototype.setNeuronWeight = function (layerIdx, neuronIdx, weightIdx, val) {
+            this.layers[layerIdx].neurons[neuronIdx].weights[weightIdx] = val;
+        };
+        LayerFacade.prototype.getLayerSize = function (layerIdx) {
+            return this.layers[layerIdx].neurons.length;
+        };
+        LayerFacade.prototype.getNumLayers = function () {
+            return this.layers.length;
+        };
+        LayerFacade.prototype.getNumWeights = function (layerIdx, neuronIdx) {
+            return this.layers[layerIdx].neurons[neuronIdx].weights.length;
+        };
+
+        // ---- END LayerFacade ----
+
+        // --- Activation Functions: vanilla JS ---
+        var ActivationFunctions = {
+            sigmoid: function(x) { return 1 / (1 + Math.exp(-x)); },
+            dSigmoid: function(x) { return x * (1 - x); },
+            tanh: function(x) { return Math.tanh(x); },
+            dTanh: function(x) { return 1 - (x * x); },
+            relu: function(x) { return Math.max(0, x); },
+            dRelu: function(x) { return x > 0 ? 1 : 0; },
+            softmax: function(xs) {
+                var sum = 0, result = [], max = Math.max.apply(null, xs);
+                for (var i = 0; i < xs.length; i++) sum += Math.exp(xs[i] - max);
+                for (var i = 0; i < xs.length; i++) result[i] = Math.exp(xs[i] - max) / sum;
+                return result;
+            },
+            dSoftmax: function(labels, xs) {
+                var res = [];
+                for (var i = 0; i < xs.length; i++) res[i] = labels[i] - xs[i];
+                return res;
+            },
+            // Dynamic for arbitrary layer types
+            apply: function(type, x) {
+                if (type === 'sigmoid') return ActivationFunctions.sigmoid(x);
+                if (type === 'tanh') return ActivationFunctions.tanh(x);
+                if (type === 'relu') return ActivationFunctions.relu(x);
+                if (type === 'softmax') return ActivationFunctions.softmax(x);
+                return ActivationFunctions.sigmoid(x);
+            },
+            applyDerivative: function(type, x, target) {
+                if (type === 'sigmoid') return ActivationFunctions.dSigmoid(x);
+                if (type === 'tanh') return ActivationFunctions.dTanh(x);
+                if (type === 'relu') return ActivationFunctions.dRelu(x);
+                if (type === 'softmax') return target ? ActivationFunctions.dSoftmax(target, x) : x;
+                return ActivationFunctions.dSigmoid(x);
+            }
+        };
+
+        // --- Network & Layer classes: vanilla JS ---
+        function DataPoint(input, target) {
+            this.input = input;
+            this.target = target;
+        }
+
+        function Neuron() {
+            this.weights = [];
+            this.bias = 0;
+            this.output = 0;
+            this.error = 0;
+        }
+
+        function Layer() {
+            this.neurons = [];
+            this.activationType = 'sigmoid'; // Default
+        }
+
+        // --- Main MLP with Facade ---
+        function MLP(inputSize, hiddenSizes, outputSize, hiddenActivation, outputActivation) {
+            this.learningRate = 0.1;
+            this.inputLayer = new Layer();
+            this.hiddenLayers = [];
+            this.outputLayer = new Layer();
+            this.hiddenActivation = hiddenActivation || 'sigmoid';
+            this.outputActivation = outputActivation || 'sigmoid';
+            this._initLayers(inputSize, hiddenSizes, outputSize);
+            this.facade = new LayerFacade(this.inputLayer, this.hiddenLayers, this.outputLayer);
+        }
+
+        MLP.prototype._initLayers = function(inputSize, hiddenSizes, outputSize) {
+            // Input Layer
+            this.inputLayer.neurons = [];
+            for (var i = 0; i < inputSize; i++) {
+                var n = new Neuron();
+                n.output = 0;
+                this.inputLayer.neurons.push(n);
+            }
+            // Hidden Layers
+            var prevSize = inputSize;
+            this.hiddenLayers = [];
+            for (var h = 0; h < hiddenSizes.length; h++) {
+                var layer = new Layer();
+                layer.activationType = this.hiddenActivation;
+                for (var i = 0; i < hiddenSizes[h]; i++) {
+                    var neuron = new Neuron();
+                    neuron.weights = randomWeights(prevSize);
+                    neuron.bias = (Math.random() * 2 - 1) * 0.1;
+                    layer.neurons.push(neuron);
+                }
+                this.hiddenLayers.push(layer);
+                prevSize = hiddenSizes[h];
+            }
+            // Output Layer
+            this.outputLayer = new Layer();
+            this.outputLayer.activationType = this.outputActivation;
+            for (var i = 0; i < outputSize; i++) {
+                var neuron = new Neuron();
+                neuron.weights = randomWeights(prevSize);
+                neuron.bias = (Math.random() * 2 - 1) * 0.1;
+                this.outputLayer.neurons.push(neuron);
+            }
+        };
+
+        function randomWeights(size) {
+            var limit = Math.sqrt(6 / size), w = [];
+            for (var i = 0; i < size; i++) {
+                w.push((Math.random() * 2 - 1) * limit);
+            }
+            return w;
+        }
+
+        // -- Facade-based Forward Pass --
+        MLP.prototype.feedForward = function(input) {
+            // Set input layer outputs
+            for (var i = 0; i < this.inputLayer.neurons.length; i++) {
+                this.inputLayer.neurons[i].output = input[i];
+            }
+            var prevOutputs = input;
+            // Hidden layers
+            var facade = this.facade;
+            for (var layerIdx = 1; layerIdx <= this.hiddenLayers.length; layerIdx++) {
+                var curOutputs = [];
+                var layer = facade.layers[layerIdx];
+                for (var i = 0; i < layer.neurons.length; i++) {
+                    var sum = layer.neurons[i].bias;
+                    for (var j = 0; j < prevOutputs.length; j++) {
+                        sum += prevOutputs[j] * layer.neurons[i].weights[j];
+                    }
+                    layer.neurons[i].output = ActivationFunctions.apply(layer.activationType, sum);
+                    curOutputs.push(layer.neurons[i].output);
+                }
+                prevOutputs = curOutputs;
+            }
+            // Output layer
+            var outputSums = [];
+            for (var i = 0; i < this.outputLayer.neurons.length; i++) {
+                var sum = this.outputLayer.neurons[i].bias;
+                for (var j = 0; j < prevOutputs.length; j++) {
+                    sum += prevOutputs[j] * this.outputLayer.neurons[i].weights[j];
+                }
+                outputSums.push(sum);
+            }
+            var output;
+            if (this.outputActivation === 'softmax') {
+                output = ActivationFunctions.softmax(outputSums);
+                for (i = 0; i < this.outputLayer.neurons.length; i++) {
+                    this.outputLayer.neurons[i].output = output[i];
+                }
+            } else {
+                output = [];
+                for (i = 0; i < this.outputLayer.neurons.length; i++) {
+                    this.outputLayer.neurons[i].output = ActivationFunctions.apply(this.outputActivation, outputSums[i]);
+                    output.push(this.outputLayer.neurons[i].output);
+                }
+            }
+            return output;
+        };
+
+        MLP.prototype.predict = function(inputArr) {
+            return this.feedForward(inputArr);
+        };
+
+        // --- Facade-based Backpropagation ---
+        MLP.prototype.backPropagate = function(target) {
+            // Output layer error
+            if (this.outputActivation === 'softmax') {
+                var derivatives = ActivationFunctions.dSoftmax(target, this.outputLayer.neurons.map(function(n){return n.output;}));
+                for (var i = 0; i < this.outputLayer.neurons.length; i++) {
+                    this.outputLayer.neurons[i].error = derivatives[i];
+                }
+            } else {
+                for (var i = 0; i < this.outputLayer.neurons.length; i++) {
+                    var o = this.outputLayer.neurons[i].output;
+                    var derivative = ActivationFunctions.applyDerivative(this.outputActivation, o);
+                    this.outputLayer.neurons[i].error = derivative * (target[i] - o);
+                }
+            }
+            // Hidden layer error, go backward
+            for (var layerIdx = this.hiddenLayers.length - 1; layerIdx >= 0; layerIdx--) {
+                var layer = this.hiddenLayers[layerIdx];
+                for (var i = 0; i < layer.neurons.length; i++) {
+                    var neuron = layer.neurons[i];
+                    var sum = 0;
+                    if (layerIdx === this.hiddenLayers.length - 1) {
+                        // Last hidden, get errors from output layer
+                        for (var j = 0; j < this.outputLayer.neurons.length; j++) {
+                            sum += this.outputLayer.neurons[j].error * this.outputLayer.neurons[j].weights[i];
+                        }
+                    } else {
+                        // Get errors from next hidden
+                        for (var j = 0; j < this.hiddenLayers[layerIdx+1].neurons.length; j++) {
+                            sum += this.hiddenLayers[layerIdx+1].neurons[j].error * this.hiddenLayers[layerIdx+1].neurons[j].weights[i];
+                        }
+                    }
+                    var derivative = ActivationFunctions.applyDerivative(layer.activationType, neuron.output);
+                    neuron.error = derivative * sum;
+                }
+            }
+        };
+
+        // --- Facade-based weight update ---
+        MLP.prototype.updateWeights = function(input) {
+            var layerOutputs = [input];
+            for (var k = 0; k < this.hiddenLayers.length; k++) {
+                var outputs = [];
+                for (var i = 0; i < this.hiddenLayers[k].neurons.length; i++) {
+                    outputs.push(this.hiddenLayers[k].neurons[i].output);
+                }
+                layerOutputs.push(outputs);
+            }
+            // Output layer
+            var lastHiddenOutputs = layerOutputs[layerOutputs.length-1];
+            for (var i = 0; i < this.outputLayer.neurons.length; i++) {
+                var neuron = this.outputLayer.neurons[i];
+                for (var j = 0; j < neuron.weights.length; j++) {
+                    neuron.weights[j] += this.learningRate * neuron.error * lastHiddenOutputs[j];
+                }
+                neuron.bias += this.learningRate * neuron.error;
+            }
+            // Hidden layers (backward)
+            for (var k = this.hiddenLayers.length - 1; k >= 0; k--) {
+                var prevOutputs = layerOutputs[k];
+                for (var i = 0; i < this.hiddenLayers[k].neurons.length; i++) {
+                    var neuron = this.hiddenLayers[k].neurons[i];
+                    for (var j = 0; j < neuron.weights.length; j++) {
+                        neuron.weights[j] += this.learningRate * neuron.error * prevOutputs[j];
+                    }
+                    neuron.bias += this.learningRate * neuron.error;
+                }
+            }
+        };
+
+        MLP.prototype.train = function(input, target) {
+            this.feedForward(input);
+            this.backPropagate(target);
+            this.updateWeights(input);
+        };
+
+        // --- Save/load model: vanilla JSON ---
+        MLP.prototype.toJSON = function() {
+            return JSON.stringify({
+                learningRate: this.learningRate,
+                inputSize: this.inputLayer.neurons.length,
+                hiddenSizes: this.hiddenLayers.map(function(l){return l.neurons.length;}),
+                outputSize: this.outputLayer.neurons.length,
+                hiddenActivation: this.hiddenActivation,
+                outputActivation: this.outputActivation,
+                hiddenLayers: this.hiddenLayers.map(function(layer){
+                    return {
+                        activationType: layer.activationType,
+                        neurons: layer.neurons.map(function(n){
+                            return { weights: n.weights, bias: n.bias };
+                        })
+                    };
+                }),
+                outputLayer: {
+                    activationType: this.outputLayer.activationType,
+                    neurons: this.outputLayer.neurons.map(function(n){
+                        return { weights: n.weights, bias: n.bias };
+                    })
+                }
+            });
+        };
+
+        MLP.fromJSON = function(jsonStr) {
+            var obj = JSON.parse(jsonStr);
+            var mlp = new MLP(
+                obj.inputSize,
+                obj.hiddenSizes,
+                obj.outputSize,
+                obj.hiddenActivation,
+                obj.outputActivation
+            );
+            mlp.learningRate = obj.learningRate;
+            for (var k = 0; k < mlp.hiddenLayers.length; k++) {
+                if (obj.hiddenLayers[k].activationType) mlp.hiddenLayers[k].activationType = obj.hiddenLayers[k].activationType;
+                for (var i = 0; i < mlp.hiddenLayers[k].neurons.length; i++) {
+                    mlp.hiddenLayers[k].neurons[i].weights = obj.hiddenLayers[k].neurons[i].weights;
+                    mlp.hiddenLayers[k].neurons[i].bias = obj.hiddenLayers[k].neurons[i].bias;
+                }
+            }
+            if (obj.outputLayer.activationType)
+                mlp.outputLayer.activationType = obj.outputLayer.activationType;
+            for (var i = 0; i < mlp.outputLayer.neurons.length; i++) {
+                mlp.outputLayer.neurons[i].weights = obj.outputLayer.neurons[i].weights;
+                mlp.outputLayer.neurons[i].bias = obj.outputLayer.neurons[i].bias;
+            }
+            return mlp;
+        };
+
+        // --- Global training data setup ---
+        var mlp = null;
+        var data = [];
+        function parseCSV(text) {
+            var lines = text.trim().split("\n");
+            var points = [];
+            for (var i = 0; i < lines.length; i++) {
+                if (!lines[i].trim()) continue;
+                var arr = lines[i].split(",").map(Number);
+                var inputSize = parseInt(document.getElementById("inputSize").value, 10);
+                var outputSize = parseInt(document.getElementById("outputSize").value, 10);
+                var input = arr.slice(0, inputSize);
+                var target = arr.slice(inputSize, inputSize + outputSize);
+                points.push(new DataPoint(input, target));
+            }
+            return points;
+        }
+
+        function loadCSV() {
+            var file = document.getElementById("csvFile").files[0];
+            if (!file) return;
+            var reader = new FileReader();
+            reader.onload = function(e) {
+                data = parseCSV(e.target.result);
+                document.getElementById("dataStatus").textContent = "CSV loaded: " + data.length + " records.";
+            };
+            reader.readAsText(file);
+        }
+        function loadCSVText() {
+            var txt = document.getElementById("csvPaste").value;
+            data = parseCSV(txt);
+            document.getElementById("dataStatus").textContent = "CSV loaded: " + data.length + " records.";
+        }
+
+        function generateTestData() {
+            var samplesPerClass = parseInt(document.getElementById("samplesPerClass").value, 10);
+            var inputSize = parseInt(document.getElementById("inputSize").value, 10);
+            var outputSize = parseInt(document.getElementById("outputSize").value, 10);
+            data = [];
+            for (var classIdx = 0; classIdx < outputSize; classIdx++) {
+                for (var i = 0; i < samplesPerClass; i++) {
+                    var input = [];
+                    var target = [];
+                    // targets one-hot
+                    for (var t = 0; t < outputSize; t++) target[t] = 0;
+                    target[classIdx] = 1;
+                    // Patterns to emulate your Pascal sample
+                    for (var j = 0; j < inputSize; j++) {
+                        if (classIdx === 0) input.push(Math.random() * 0.5);
+                        else if (classIdx === 1) input.push(0.5 + Math.random() * 0.5);
+                        else if (classIdx === 2) input.push(j % 2 === 0 ? Math.random() * 0.5 : 0.5 + Math.random() * 0.5);
+                        else input.push(Math.random());
+                    }
+                    data.push(new DataPoint(input, target));
+                }
+            }
+            // Shuffle
+            for (var k = data.length - 1; k > 0; k--) {
+                var j = Math.floor(Math.random() * (k + 1));
+                var tmp = data[k]; data[k] = data[j]; data[j] = tmp;
+            }
+            document.getElementById("generateStatus").textContent = "Generated " + data.length + " records.";
+        }
+
+        function createNetwork() {
+            var inputSize = parseInt(document.getElementById("inputSize").value, 10);
+            var hiddenSizes = document.getElementById("hiddenSizes").value.split(",").map(function(x){return parseInt(x.trim(), 10);});
+            var outputSize = parseInt(document.getElementById("outputSize").value, 10);
+            var hiddenAct = document.getElementById("hiddenActivation").value;
+            var outputAct = document.getElementById("outputActivation").value;
+            mlp = new MLP(inputSize, hiddenSizes, outputSize, hiddenAct, outputAct);
+            mlp.learningRate = parseFloat(document.getElementById("learningRate").value);
+            document.getElementById("networkStatus").textContent = "Network created!";
+        }
+
+        function runKFoldValidation() {
+            var numFolds = parseInt(document.getElementById("numFolds").value, 10);
+            var validationEpochs = parseInt(document.getElementById("validationEpochs").value, 10);
+            var numSamples = data.length;
+            var foldSize = Math.floor(numSamples / numFolds);
+            var sumAccuracy = 0;
+            for (var i = 0; i < numFolds; i++) {
+                var foldMLP = MLP.fromJSON(mlp.toJSON()); // fresh for each fold
+                var testSet = data.slice(i * foldSize, (i + 1) * foldSize);
+                var trainSet = data.slice(0, i * foldSize).concat(data.slice((i + 1) * foldSize));
+                for (var ep = 0; ep < validationEpochs; ep++) {
+                    for (var k = 0; k < trainSet.length; k++) {
+                        foldMLP.train(trainSet[k].input, trainSet[k].target);
+                    }
+                }
+                var correctPred = 0;
+                for (var j = 0; j < testSet.length; j++) {
+                    var pred = foldMLP.predict(testSet[j].input);
+                    var predictedClass = getMaxIndex(pred);
+                    var actualClass = getMaxIndex(testSet[j].target);
+                    if (predictedClass === actualClass) correctPred++;
+                }
+                sumAccuracy += correctPred;
+            }
+            var acc = sumAccuracy / numSamples;
+            document.getElementById("evaluationResults").innerHTML = "<div class='metric'>K-Fold Accuracy: " + acc.toFixed(4) + "</div>";
+        }
+
+        function runAllMetrics() {
+            var outputSize = mlp.outputLayer.neurons.length;
+            var resultsHtml = "<table><tr><th>Class</th><th>Precision</th><th>Recall</th><th>F1 Score</th></tr>";
+            for (var c = 0; c < outputSize; c++) {
+                var prec = precisionScore(data, mlp, c);
+                var rec = recallScore(data, mlp, c);
+                var f1 = f1Score(prec, rec);
+                resultsHtml += "<tr><td>" + c + "</td><td>" + prec.toFixed(3) + "</td><td>" + rec.toFixed(3) + "</td><td>" + f1.toFixed(3) + "</td></tr>";
+            }
+            resultsHtml += "</table>";
+            document.getElementById("evaluationResults").innerHTML = resultsHtml;
+        }
+
+        function precisionScore(dataArr, model, classIdx) {
+            var tp = 0, fp = 0;
+            for (var i = 0; i < dataArr.length; i++) {
+                var pred = model.predict(dataArr[i].input);
+                var predictedClass = getMaxIndex(pred);
+                var actualClass = getMaxIndex(dataArr[i].target);
+                if (predictedClass === classIdx) {
+                    if (actualClass === classIdx) tp++;
+                    else fp++;
+                }
+            }
+            return (tp + fp) === 0 ? 0 : tp / (tp + fp);
+        }
+        function recallScore(dataArr, model, classIdx) {
+            var tp = 0, fn = 0;
+            for (var i = 0; i < dataArr.length; i++) {
+                var pred = model.predict(dataArr[i].input);
+                var predictedClass = getMaxIndex(pred);
+                var actualClass = getMaxIndex(dataArr[i].target);
+                if (actualClass === classIdx) {
+                    if (predictedClass === classIdx) tp++;
+                    else fn++;
+                }
+            }
+            return (tp + fn) === 0 ? 0 : tp / (tp + fn);
+        }
+        function f1Score(prec, rec) {
+            return (prec + rec) === 0 ? 0 : 2 * (prec * rec) / (prec + rec);
+        }
+
+        function getMaxIndex(arr) {
+            var maxIdx = 0;
+            for (var i = 1; i < arr.length; i++) {
+                if (arr[i] > arr[maxIdx]) maxIdx = i;
+            }
+            return maxIdx;
+        }
+
+        function saveModel() {
+            if (!mlp) return;
+            var s = mlp.toJSON();
+            var blob = new Blob([s], {type: "application/json"});
+            var a = document.createElement("a");
+            a.href = URL.createObjectURL(blob);
+            a.download = "mlp_model.json";
+            a.click();
+            document.getElementById("modelStatus").textContent = "Model saved!";
+        }
+
+        function loadModel() {
+            var file = document.getElementById("modelFile").files[0];
+            if (!file) return;
+            var reader = new FileReader();
+            reader.onload = function(e) {
+                mlp = MLP.fromJSON(e.target.result);
+                document.getElementById("modelStatus").textContent = "Model loaded!";
+            };
+            reader.readAsText(file);
+        }
+
+        function trainNetwork() {
+            if (!mlp) return;
+            var trainEpochs = parseInt(document.getElementById("trainingEpochs").value, 10);
+            var batchSize = document.getElementById("batchSize").value;
+            var totalSamples = data.length;
+            var actualBatchSize = batchSize === 'all' ? totalSamples : parseInt(batchSize, 10);
+            for (var ep = 0; ep < trainEpochs; ep++) {
+                var shuffled = data.slice().sort(function(){return Math.random()-0.5;});
+                for (var i = 0; i < totalSamples; i += actualBatchSize) {
+                    var batch = shuffled.slice(i, Math.min(i+actualBatchSize, totalSamples));
+                    for (var j = 0; j < batch.length; j++)
+                        mlp.train(batch[j].input, batch[j].target);
+                }
+            }
+            document.getElementById("trainStatus").textContent = "Training complete (" + trainEpochs + " epochs)";
+        }
+
+        function trainNetworkWithProgress() {
+            if (!mlp) return;
+            var trainEpochs = parseInt(document.getElementById("trainingEpochs").value, 10);
+            var batchSize = document.getElementById("batchSize").value;
+            var totalSamples = data.length;
+            var actualBatchSize = batchSize === 'all' ? totalSamples : parseInt(batchSize, 10);
+            var ep = 0;
+            var trainStatus = document.getElementById("trainStatus");
+            var trainProgress = document.getElementById("trainingProgress");
+            trainStatus.textContent = '';
+            function doEpoch() {
+                var shuffled = data.slice().sort(function(){return Math.random()-0.5;});
+                for (var i = 0; i < totalSamples; i += actualBatchSize) {
+                    var batch = shuffled.slice(i, Math.min(i+actualBatchSize, totalSamples));
+                    for (var j = 0; j < batch.length; j++)
+                        mlp.train(batch[j].input, batch[j].target);
+                }
+                ep++;
+                trainProgress.textContent = "Epoch " + ep + "/" + trainEpochs;
+                if (ep < trainEpochs) setTimeout(doEpoch, 30); // allow UI update
+                else trainStatus.textContent = "Training complete (" + trainEpochs + " epochs)";
+            }
+            doEpoch();
+        }
+
+        function predictInput() {
+            if (!mlp) return;
+            var vals = document.getElementById("predictInput").value.split(",").map(Number);
+            var pred = mlp.predict(vals);
+            document.getElementById("predictOutput").innerHTML = "Predicted: [" + pred.map(function(x){return x.toFixed(4);}).join(", ") + "]";
+        }
+    </script>
+</body>
+</html>
