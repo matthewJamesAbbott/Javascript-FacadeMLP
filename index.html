@@ -1,27 +1,134 @@
-<!--
-  This HTML+JavaScript file provides an in-browser MLP (Multi-Layer Perceptron) trainer. It includes:
-   - UI to pick network shape/layer/activation
-   - Upload, paste, or generate training datasets
-   - Save/Load trained models
-   - Train (with progress reporting)
-   - Predict on ad-hoc user inputs
-   - A Layer Facade for flexible layer/weight/activation access
-   - Modular and highly-commented functions for learning and teaching purposes
--->
-
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
-    <title>Multi-Layer Perceptron Trainer with Layer Facade</title>
+    <title>Multi-Layer Perceptron Trainer with Facade</title>
     <style>
-        /* ...STYLE OMITTED FOR BREVITY... */
+        body {
+            font-family: Arial, sans-serif;
+            margin: 2rem;
+        }
+
+        input,
+        select,
+        textarea,
+        button {
+            margin: 0.5rem 0;
+        }
+
+        .section {
+            margin-bottom: 2rem;
+            border-bottom: 1px solid #ccc;
+            padding-bottom: 1rem;
+        }
+
+        label {
+            display: block;
+            margin-top: 0.5rem;
+        }
+
+        .results {
+            background-color: #f5f5f5;
+            padding: 1rem;
+            margin: 1rem 0;
+            border-radius: 5px;
+        }
+
+        .metric {
+            margin: 0.5rem 0;
+            font-weight: bold;
+        }
+
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            margin: 1rem 0;
+        }
+
+        th,
+        td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+
+        th {
+            background-color: #f2f2f2;
+        }
+
+        .epoch-controls {
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .epoch-info {
+            font-style: italic;
+            color: #666;
+            margin-top: 0.5rem;
+        }
+
+        .warning {
+            color: #b36b00;
+            background-color: #fff3cd;
+            padding: 0.5rem;
+            border-radius: 4px;
+            margin: 0.5rem 0;
+        }
+
+        .error-msg {
+            color: #721c24;
+            background-color: #f8d7da;
+            padding: 0.5rem;
+            border-radius: 4px;
+            margin: 0.5rem 0;
+        }
+
+        .facade-section {
+            background-color: #e8f4f8;
+            padding: 1rem;
+            border-radius: 5px;
+            margin: 1rem 0;
+        }
+
+        .facade-controls {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 0.5rem;
+        }
+
+        .facade-output {
+            background-color: #fff;
+            border: 1px solid #ccc;
+            padding: 0.5rem;
+            margin-top: 0.5rem;
+            font-family: monospace;
+            white-space: pre-wrap;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .histogram-container {
+            display: flex;
+            align-items: flex-end;
+            height: 100px;
+            border: 1px solid #ccc;
+            margin: 0.5rem 0;
+        }
+
+        .histogram-bar {
+            background-color: #4CAF50;
+            flex: 1;
+            margin: 0 1px;
+        }
     </style>
 </head>
-<body>
-    <h1>Multi-Layer Perceptron Trainer with Layer Facade</h1>
 
-    <!-- ===== User controls for network architecture and training ===== -->
+<body>
+    <h1>Multi-Layer Perceptron Trainer with Facade</h1>
+
     <div class="section">
         <h2>Network Configuration</h2>
         <label>Input Size: <input type="number" id="inputSize" value="10" min="1"></label>
@@ -42,17 +149,34 @@
                 <option value="relu">ReLU</option>
             </select>
         </label>
-        <label>Learning Rate: <input type="number" id="learningRate" value="0.1" step="0.01" min="0.001" max="1"></label>
+        <label>Learning Rate: <input type="number" id="learningRate" value="0.1" step="0.01" min="0.001"
+                max="1"></label>
+        <label>Optimizer:
+            <select id="optimizer">
+                <option value="sgd" selected>SGD</option>
+                <option value="adam">Adam</option>
+                <option value="rmsprop">RMSProp</option>
+            </select>
+        </label>
         <button onclick="createNetwork()">Create Network</button>
         <span id="networkStatus" style="margin-left:1rem;"></span>
     </div>
 
-    <!-- ===== Training meta-parameters ===== -->
+    <div class="section">
+        <h2>Regularization</h2>
+        <label>Dropout Rate (0-1): <input type="number" id="dropoutRate" value="0" step="0.1" min="0" max="0.9"></label>
+        <label>L2 Regularization (lambda): <input type="number" id="l2Lambda" value="0" step="0.0001" min="0" max="0.1"></label>
+    </div>
+
     <div class="section">
         <h2>Training Configuration</h2>
         <div class="epoch-controls">
-            <label>Training Epochs: <input type="number" id="trainingEpochs" value="50" min="1"></label>
-            <label>Validation Epochs: <input type="number" id="validationEpochs" value="30" min="1"></label>
+            <label>Training Epochs:
+                <input type="number" id="trainingEpochs" value="50" min="1" max="10000" step="1">
+            </label>
+            <label>Validation Epochs:
+                <input type="number" id="validationEpochs" value="30" min="1" max="1000" step="1">
+            </label>
             <label>Batch Size:
                 <select id="batchSize">
                     <option value="1">1 (Online Learning)</option>
@@ -63,24 +187,17 @@
                 </select>
             </label>
         </div>
-        <div class="epoch-info">
-            ℹ️ Training Epochs: full passes through training data <br>
-            ℹ️ Validation Epochs: used in k-fold cross-validation <br>
-            ℹ️ Batch Size: samples processed before weights update
-        </div>
+        <label>
+            <input type="checkbox" id="enableLRDecay"> Enable Learning Rate Decay
+            <input type="number" id="lrDecayRate" value="0.95" step="0.01" min="0.5" max="1" style="width:60px"> per
+            <input type="number" id="lrDecayEpochs" value="10" step="1" min="1" style="width:50px"> epochs
+        </label>
+        <label>
+            <input type="checkbox" id="enableEarlyStopping"> Enable Early Stopping after
+            <input type="number" id="earlyStoppingPatience" value="10" step="1" min="1" style="width:50px"> epochs without improvement
+        </label>
     </div>
 
-    <!-- ====== Dataset input and generators ======= -->
-    <div class="section">
-        <h2>Load Training Data</h2>
-        <input type="file" id="csvFile" accept=".csv">
-        <button onclick="loadCSV()">Load CSV</button>
-        <span id="dataStatus"></span>
-        <br>
-        <label>Or paste CSV data:</label>
-        <textarea id="csvPaste" rows="5" cols="60"></textarea>
-        <button onclick="loadCSVText()">Load Pasted CSV</button>
-    </div>
     <div class="section">
         <h2>Generate Test Data</h2>
         <label>Number of Samples per Class: <input type="number" id="samplesPerClass" value="2500" min="100"></label>
@@ -88,25 +205,6 @@
         <span id="generateStatus"></span>
     </div>
 
-    <!-- ===== Model evaluation via K-fold & metrics ===== -->
-    <div class="section">
-        <h2>Model Evaluation</h2>
-        <label>Number of Folds: <input type="number" id="numFolds" value="10" min="2" max="20"></label>
-        <button onclick="runKFoldValidation()">Run K-Fold Cross Validation</button>
-        <button onclick="runAllMetrics()">Run All Evaluation Metrics</button>
-        <div id="evaluationResults"></div>
-    </div>
-
-    <!-- ===== Save/load neural net to/from file ===== -->
-    <div class="section">
-        <h2>Save/Load Model</h2>
-        <button onclick="saveModel()">Save Model</button>
-        <button onclick="loadModel()">Load Model</button>
-        <input type="file" id="modelFile" accept=".json">
-        <span id="modelStatus"></span>
-    </div>
-
-    <!-- ===== Train and show progress ===== -->
     <div class="section">
         <h2>Train Network</h2>
         <button onclick="trainNetwork()">Train Network</button>
@@ -115,601 +213,1221 @@
         <div id="trainingProgress"></div>
     </div>
 
-    <!-- ===== Manual user prediction ===== -->
+    <div class="section facade-section">
+        <h2>🔧 Facade API Explorer</h2>
+        <p>Use the facade to inspect and modify the network internals:</p>
+
+        <div class="facade-controls">
+            <label>Layer Index: <input type="number" id="facadeLayerIdx" value="1" min="0"></label>
+            <label>Neuron Index: <input type="number" id="facadeNeuronIdx" value="0" min="0"></label>
+            <label>Weight Index: <input type="number" id="facadeWeightIdx" value="0" min="0"></label>
+        </div>
+
+        <h3>Neuron Properties</h3>
+        <button onclick="facadeGetNeuronOutput()">Get Output</button>
+        <button onclick="facadeGetNeuronError()">Get Error</button>
+        <button onclick="facadeGetNeuronBias()">Get Bias</button>
+        <button onclick="facadeGetNeuronWeight()">Get Weight</button>
+        <button onclick="facadeGetAllWeights()">Get All Weights</button>
+        <button onclick="facadeGetPreActivation()">Get PreActivation</button>
+
+        <h3>Gradients & Optimizer</h3>
+        <button onclick="facadeGetWeightGradient()">Get Weight Gradient</button>
+        <button onclick="facadeGetBiasGradient()">Get Bias Gradient</button>
+        <button onclick="facadeGetOptimizerM()">Get Optimizer M</button>
+        <button onclick="facadeGetOptimizerV()">Get Optimizer V</button>
+
+        <h3>Layer Properties</h3>
+        <button onclick="facadeGetLayerSize()">Get Layer Size</button>
+        <button onclick="facadeGetTotalLayers()">Get Total Layers</button>
+        <button onclick="facadeGetLayerLearningRate()">Get Layer LR</button>
+        <button onclick="facadeGetTopology()">Get Topology</button>
+        <button onclick="facadeGetStatistics()">Get Statistics</button>
+
+        <h3>Connections</h3>
+        <button onclick="facadeGetIncomingConnections()">Get Incoming</button>
+        <button onclick="facadeGetOutgoingConnections()">Get Outgoing</button>
+
+        <h3>Dynamic Topology</h3>
+        <button onclick="facadeAddNeuron()">Add Neuron</button>
+        <button onclick="facadeRemoveNeuron()">Remove Neuron</button>
+        <label>New Layer Size: <input type="number" id="newLayerSize" value="4" min="1" style="width:50px"></label>
+        <button onclick="facadeAddLayer()">Add Layer</button>
+        <button onclick="facadeRemoveLayer()">Remove Layer</button>
+
+        <h3>Histograms</h3>
+        <button onclick="facadeShowActivationHistogram()">Activation Histogram</button>
+        <button onclick="facadeShowGradientHistogram()">Gradient Histogram</button>
+        <div id="histogramDisplay"></div>
+
+        <h3>Setters</h3>
+        <label>Value: <input type="number" id="facadeSetValue" value="0" step="0.01"></label>
+        <button onclick="facadeSetNeuronBias()">Set Bias</button>
+        <button onclick="facadeSetNeuronWeight()">Set Weight</button>
+        <button onclick="facadeSetLayerLearningRate()">Set Layer LR</button>
+        <button onclick="facadeSetNeuronL2Lambda()">Set Neuron L2</button>
+
+        <h3>Output</h3>
+        <div id="facadeOutput" class="facade-output">Facade output will appear here...</div>
+    </div>
+
     <div class="section">
         <h2>Predict</h2>
-        <label>Input (comma separated): <input type="text" id="predictInput" value=""></label>
+        <label>Input (comma separated): <input type="text" id="predictInput"
+                value="0.19,0.21,0.32,0.43,0.54,0.65,0.77,0.88,0.99,0.01"></label>
         <button onclick="predictInput()">Predict</button>
         <div id="predictOutput"></div>
     </div>
 
-<!-- ====== MAIN MLP/JS CORE: Classes + Facade ====== -->
-<script>
-/*
-    LayerFacade:
-    Streamlines interaction with layers for modularity and decoupling.
-    Provides unified set/get for neuron outputs, errors, biases, weights.
-*/
-function LayerFacade(inputLayer, hiddenLayers, outputLayer) {
-    this.layers = [inputLayer].concat(hiddenLayers).concat([outputLayer]);
-}
-LayerFacade.prototype.getNeuronOutput = function (layerIdx, neuronIdx) {
-    return this.layers[layerIdx].neurons[neuronIdx].output;
-};
-LayerFacade.prototype.setNeuronOutput = function (layerIdx, neuronIdx, val) {
-    this.layers[layerIdx].neurons[neuronIdx].output = val;
-};
-LayerFacade.prototype.getNeuronError = function (layerIdx, neuronIdx) {
-    return this.layers[layerIdx].neurons[neuronIdx].error;
-};
-LayerFacade.prototype.setNeuronError = function (layerIdx, neuronIdx, val) {
-    this.layers[layerIdx].neurons[neuronIdx].error = val;
-};
-LayerFacade.prototype.getNeuronBias = function (layerIdx, neuronIdx) {
-    return this.layers[layerIdx].neurons[neuronIdx].bias;
-};
-LayerFacade.prototype.setNeuronBias = function (layerIdx, neuronIdx, val) {
-    this.layers[layerIdx].neurons[neuronIdx].bias = val;
-};
-LayerFacade.prototype.getNeuronWeight = function (layerIdx, neuronIdx, weightIdx) {
-    return this.layers[layerIdx].neurons[neuronIdx].weights[weightIdx];
-};
-LayerFacade.prototype.setNeuronWeight = function (layerIdx, neuronIdx, weightIdx, val) {
-    this.layers[layerIdx].neurons[neuronIdx].weights[weightIdx] = val;
-};
-LayerFacade.prototype.getLayerSize = function (layerIdx) {
-    return this.layers[layerIdx].neurons.length;
-};
-LayerFacade.prototype.getNumLayers = function () {
-    return this.layers.length;
-};
-LayerFacade.prototype.getNumWeights = function (layerIdx, neuronIdx) {
-    return this.layers[layerIdx].neurons[neuronIdx].weights.length;
-};
+    <script>
+        const EPSILON = 1e-15;
+        const HISTOGRAM_BINS = 20;
 
-// ==== Common Activation Functions & Their Derivatives ====
-var ActivationFunctions = {
-    sigmoid: function(x) { return 1 / (1 + Math.exp(-x)); },
-    dSigmoid: function(x) { return x * (1 - x); },
-    tanh: function(x) { return Math.tanh(x); },
-    dTanh: function(x) { return 1 - (x * x); },
-    relu: function(x) { return Math.max(0, x); },
-    dRelu: function(x) { return x > 0 ? 1 : 0; },
-    softmax: function(xs) {
-        var sum = 0, result = [], max = Math.max.apply(null, xs);
-        for (var i = 0; i < xs.length; i++) sum += Math.exp(xs[i] - max);
-        for (var i = 0; i < xs.length; i++) result[i] = Math.exp(xs[i] - max) / sum;
-        return result;
-    },
-    dSoftmax: function(labels, xs) {
-        // Shape: dLoss/dz for cross-entropy+softmax
-        var res = [];
-        for (var i = 0; i < xs.length; i++) res[i] = labels[i] - xs[i];
-        return res;
-    },
-    // Apply activation generically by name
-    apply: function(type, x) {
-        if (type === 'sigmoid') return ActivationFunctions.sigmoid(x);
-        if (type === 'tanh') return ActivationFunctions.tanh(x);
-        if (type === 'relu') return ActivationFunctions.relu(x);
-        if (type === 'softmax') return ActivationFunctions.softmax(x);
-        return ActivationFunctions.sigmoid(x);
-    },
-    applyDerivative: function(type, x, target) {
-        if (type === 'sigmoid') return ActivationFunctions.dSigmoid(x);
-        if (type === 'tanh') return ActivationFunctions.dTanh(x);
-        if (type === 'relu') return ActivationFunctions.dRelu(x);
-        if (type === 'softmax') return target ? ActivationFunctions.dSoftmax(target, x) : x;
-        return ActivationFunctions.dSigmoid(x);
-    }
-};
-
-// ====== Minimal DataPoint, Neuron, Layer classes ======
-function DataPoint(input, target) {
-    this.input = input;
-    this.target = target;
-}
-// Each neuron stores its weights, bias, output, backprop error
-function Neuron() {
-    this.weights = [];
-    this.bias = 0;
-    this.output = 0;
-    this.error = 0;
-}
-// A neural net layer holds an array of Neurons and an activation type
-function Layer() {
-    this.neurons = [];
-    this.activationType = 'sigmoid'; // Default type
-}
-
-/*
-    Main MLP (multi-layer perceptron) network structure.
-    Accepts:
-     - input size
-     - array of hidden layer sizes
-     - output size
-     - activation functions for hidden and output layers
-     - all layer weight/biases are initialized randomly upon build
-*/
-function MLP(inputSize, hiddenSizes, outputSize, hiddenActivation, outputActivation) {
-    this.learningRate = 0.1;
-    this.inputLayer = new Layer();
-    this.hiddenLayers = [];
-    this.outputLayer = new Layer();
-    this.hiddenActivation = hiddenActivation || 'sigmoid';
-    this.outputActivation = outputActivation || 'sigmoid';
-    this._initLayers(inputSize, hiddenSizes, outputSize);
-    this.facade = new LayerFacade(this.inputLayer, this.hiddenLayers, this.outputLayer);
-}
-
-// === LAYER/BRAIN BUILDER ===
-MLP.prototype._initLayers = function(inputSize, hiddenSizes, outputSize) {
-    // Build input layer (dummy as it's always a "pass-through")
-    this.inputLayer.neurons = [];
-    for (var i = 0; i < inputSize; i++) {
-        var n = new Neuron(); n.output = 0;
-        this.inputLayer.neurons.push(n);
-    }
-    // Hidden layers (with own act type)
-    var prevSize = inputSize;
-    this.hiddenLayers = [];
-    for (var h = 0; h < hiddenSizes.length; h++) {
-        var layer = new Layer();
-        layer.activationType = this.hiddenActivation;
-        for (var i = 0; i < hiddenSizes[h]; i++) {
-            var neuron = new Neuron();
-            neuron.weights = randomWeights(prevSize);
-            neuron.bias = (Math.random() * 2 - 1) * 0.1;
-            layer.neurons.push(neuron);
-        }
-        this.hiddenLayers.push(layer);
-        prevSize = hiddenSizes[h];
-    }
-    // Output layer (activation set by the output dropdown)
-    this.outputLayer = new Layer();
-    this.outputLayer.activationType = this.outputActivation;
-    for (var i = 0; i < outputSize; i++) {
-        var neuron = new Neuron();
-        neuron.weights = randomWeights(prevSize);
-        neuron.bias = (Math.random() * 2 - 1) * 0.1;
-        this.outputLayer.neurons.push(neuron);
-    }
-};
-
-// Utility: Random weights between -limit and +limit
-function randomWeights(size) {
-    var limit = Math.sqrt(6 / size), w = [];
-    for (var i = 0; i < size; i++) {
-        w.push((Math.random() * 2 - 1) * limit);
-    }
-    return w;
-}
-
-/* 
-    Forward pass using the facade:
-    1. Set input layer outputs.
-    2. For each hidden layer, multiply previous layer’s outputs by weights, add bias, apply activation.
-    3. For output layer, either run through softmax or standard activation.
-    4. Save all neuron outputs for backwards weight update.
-*/
-MLP.prototype.feedForward = function(input) {
-    var i, j, sum;
-    // Set input neuron outputs directly
-    for (i = 0; i < this.inputLayer.neurons.length; i++) {
-        this.inputLayer.neurons[i].output = input[i];
-    }
-    var prevOutputs = input;
-    // Hidden layers
-    var facade = this.facade;
-    for (var layerIdx = 1; layerIdx <= this.hiddenLayers.length; layerIdx++) {
-        var curOutputs = [];
-        var layer = facade.layers[layerIdx];
-        for (i = 0; i < layer.neurons.length; i++) {
-            sum = layer.neurons[i].bias;
-            for (j = 0; j < prevOutputs.length; j++) {
-                sum += prevOutputs[j] * layer.neurons[i].weights[j];
-            }
-            layer.neurons[i].output = ActivationFunctions.apply(layer.activationType, sum);
-            curOutputs.push(layer.neurons[i].output);
-        }
-        prevOutputs = curOutputs;
-    }
-    // Output layer
-    var outputSums = [];
-    for (i = 0; i < this.outputLayer.neurons.length; i++) {
-        sum = this.outputLayer.neurons[i].bias;
-        for (j = 0; j < prevOutputs.length; j++) {
-            sum += prevOutputs[j] * this.outputLayer.neurons[i].weights[j];
-        }
-        outputSums.push(sum);
-    }
-    var output;
-    // If softmax, use joint probabilities; if not, ordinary activations
-    if (this.outputActivation === 'softmax') {
-        output = ActivationFunctions.softmax(outputSums);
-        for (i = 0; i < this.outputLayer.neurons.length; i++) {
-            this.outputLayer.neurons[i].output = output[i];
-        }
-    } else {
-        output = [];
-        for (i = 0; i < this.outputLayer.neurons.length; i++) {
-            this.outputLayer.neurons[i].output = ActivationFunctions.apply(this.outputActivation, outputSums[i]);
-            output.push(this.outputLayer.neurons[i].output);
-        }
-    }
-    return output;
-};
-
-MLP.prototype.predict = function(inputArr) {
-    return this.feedForward(inputArr);
-};
-
-/*
-    Backpropagation (training step):
-    1. Calculate error in output layer.
-    2. Work backward through hidden layers, computing deltas for each neuron.
-    3. Save all errors for forward pass for use in weight updates.
-*/
-MLP.prototype.backPropagate = function(target) {
-    // Output layer error
-    if (this.outputActivation === 'softmax') {
-        var derivatives = ActivationFunctions.dSoftmax(target, this.outputLayer.neurons.map(function(n){return n.output;}));
-        for (var i = 0; i < this.outputLayer.neurons.length; i++) {
-            this.outputLayer.neurons[i].error = derivatives[i];
-        }
-    } else {
-        for (var i = 0; i < this.outputLayer.neurons.length; i++) {
-            var o = this.outputLayer.neurons[i].output;
-            var derivative = ActivationFunctions.applyDerivative(this.outputActivation, o);
-            this.outputLayer.neurons[i].error = derivative * (target[i] - o);
-        }
-    }
-    // Hidden layers: propagate error from above layer, use each neuron's output in derivative
-    for (var layerIdx = this.hiddenLayers.length - 1; layerIdx >= 0; layerIdx--) {
-        var layer = this.hiddenLayers[layerIdx];
-        for (var i = 0; i < layer.neurons.length; i++) {
-            var neuron = layer.neurons[i];
-            var sum = 0;
-            if (layerIdx === this.hiddenLayers.length - 1) {
-                // Output layer is next in chain
-                for (var j = 0; j < this.outputLayer.neurons.length; j++) {
-                    sum += this.outputLayer.neurons[j].error * this.outputLayer.neurons[j].weights[i];
+        // ==================== Activation Functions ====================
+        class ActivationFunctions {
+            static softmax(x) {
+                if (!(x instanceof Array)) return null;
+                const maxVal = Math.max(...x);
+                let sum = 0;
+                const expValues = [];
+                for (let i = 0; i < x.length; i++) {
+                    const expVal = Math.exp(x[i] - maxVal);
+                    expValues.push(expVal);
+                    sum += expVal;
                 }
-            } else {
-                // Next hidden layer
-                for (var j = 0; j < this.hiddenLayers[layerIdx+1].neurons.length; j++) {
-                    sum += this.hiddenLayers[layerIdx+1].neurons[j].error * this.hiddenLayers[layerIdx+1].neurons[j].weights[i];
+                const result = [];
+                for (let i = 0; i < x.length; i++) {
+                    let prob = expValues[i] / sum;
+                    prob = Math.max(EPSILON, Math.min(1 - EPSILON, prob));
+                    result.push(prob);
+                }
+                return result;
+            }
+
+            static dSoftmax(labels, x) {
+                if (!(x instanceof Array)) return null;
+                const result = [];
+                for (let i = 0; i < x.length; i++) {
+                    result[i] = labels[i] - x[i];
+                }
+                return result;
+            }
+
+            static sigmoid(x) {
+                if (Array.isArray(x)) {
+                    return x.map(val => 1 / (1 + Math.exp(-Math.max(-500, Math.min(500, val)))));
+                }
+                return 1 / (1 + Math.exp(-Math.max(-500, Math.min(500, x))));
+            }
+
+            static dSigmoid(x) {
+                if (Array.isArray(x)) {
+                    return x.map(val => val * (1 - val));
+                }
+                return x * (1 - x);
+            }
+
+            static tanh(x) {
+                if (Array.isArray(x)) {
+                    return x.map(val => Math.tanh(val));
+                }
+                return Math.tanh(x);
+            }
+
+            static dTanh(x) {
+                if (Array.isArray(x)) {
+                    return x.map(val => 1 - (val * val));
+                }
+                return 1 - (x * x);
+            }
+
+            static relu(x) {
+                if (Array.isArray(x)) {
+                    return x.map(val => Math.max(0, val));
+                }
+                return Math.max(0, x);
+            }
+
+            static dRelu(x) {
+                if (Array.isArray(x)) {
+                    return x.map(val => val > 0 ? 1 : 0);
+                }
+                return x > 0 ? 1 : 0;
+            }
+
+            static apply(activationType, x) {
+                switch (activationType) {
+                    case 'sigmoid': return this.sigmoid(x);
+                    case 'tanh': return this.tanh(x);
+                    case 'relu': return this.relu(x);
+                    case 'softmax': return this.softmax(x);
+                    default: return this.sigmoid(x);
                 }
             }
-            var derivative = ActivationFunctions.applyDerivative(layer.activationType, neuron.output);
-            neuron.error = derivative * sum;
-        }
-    }
-};
 
-/*
-    Given all neuron outputs/errors, update weights and biases.
-    For each neuron, update:
-      - each weight by LR * error * "input"
-      - each bias by LR * error
-    This is done for all output and hidden layers.
-*/
-MLP.prototype.updateWeights = function(input) {
-    var layerOutputs = [input];
-    for (var k = 0; k < this.hiddenLayers.length; k++) {
-        var outputs = [];
-        for (var i = 0; i < this.hiddenLayers[k].neurons.length; i++) {
-            outputs.push(this.hiddenLayers[k].neurons[i].output);
-        }
-        layerOutputs.push(outputs);
-    }
-    // Output layer: Update by outputs of last hidden
-    var lastHiddenOutputs = layerOutputs[layerOutputs.length-1];
-    for (var i = 0; i < this.outputLayer.neurons.length; i++) {
-        var neuron = this.outputLayer.neurons[i];
-        for (var j = 0; j < neuron.weights.length; j++) {
-            neuron.weights[j] += this.learningRate * neuron.error * lastHiddenOutputs[j];
-        }
-        neuron.bias += this.learningRate * neuron.error;
-    }
-    // Each hidden layer, from last to first
-    for (var k = this.hiddenLayers.length - 1; k >= 0; k--) {
-        var prevOutputs = layerOutputs[k];
-        for (var i = 0; i < this.hiddenLayers[k].neurons.length; i++) {
-            var neuron = this.hiddenLayers[k].neurons[i];
-            for (var j = 0; j < neuron.weights.length; j++) {
-                neuron.weights[j] += this.learningRate * neuron.error * prevOutputs[j];
+            static applyDerivative(activationType, x, target = null) {
+                switch (activationType) {
+                    case 'sigmoid': return this.dSigmoid(x);
+                    case 'tanh': return this.dTanh(x);
+                    case 'relu': return this.dRelu(x);
+                    case 'softmax': return target ? this.dSoftmax(target, x) : x;
+                    default: return this.dSigmoid(x);
+                }
             }
-            neuron.bias += this.learningRate * neuron.error;
         }
-    }
-};
 
-MLP.prototype.train = function(input, target) {
-    this.feedForward(input);
-    this.backPropagate(target);
-    this.updateWeights(input);
-};
+        // ==================== Data Classes ====================
+        class TDataPoint {
+            constructor(input, target) {
+                this.input = input;
+                this.target = target;
+            }
+        }
 
-/* Model persistence (save/load as JSON for later reuse, re-creation, or export) */
-MLP.prototype.toJSON = function() {
-    return JSON.stringify({
-        learningRate: this.learningRate,
-        inputSize: this.inputLayer.neurons.length,
-        hiddenSizes: this.hiddenLayers.map(function(l){return l.neurons.length;}),
-        outputSize: this.outputLayer.neurons.length,
-        hiddenActivation: this.hiddenActivation,
-        outputActivation: this.outputActivation,
-        hiddenLayers: this.hiddenLayers.map(function(layer){
+        class TNeuron {
+            constructor() {
+                this.weights = [];
+                this.bias = 0;
+                this.output = 0;
+                this.error = 0;
+                this.preActivation = 0;
+                this.m = [];
+                this.v = [];
+                this.mBias = 0;
+                this.vBias = 0;
+                this.l2Lambda = -1;
+                this.attributes = {};
+            }
+        }
+
+        class TLayer {
+            constructor() {
+                this.neurons = [];
+                this.activationType = 'sigmoid';
+                this.dropoutMask = [];
+                this.learningRate = -1;
+                this.runningMean = [];
+                this.runningVar = [];
+            }
+        }
+
+        // ==================== Connection & Histogram Classes ====================
+        class TConnection {
+            constructor(fromLayerIdx, fromNeuronIdx, weight) {
+                this.fromLayerIdx = fromLayerIdx;
+                this.fromNeuronIdx = fromNeuronIdx;
+                this.weight = weight;
+            }
+        }
+
+        class THistogramBin {
+            constructor(rangeMin, rangeMax, count) {
+                this.rangeMin = rangeMin;
+                this.rangeMax = rangeMax;
+                this.count = count;
+            }
+        }
+
+        // ==================== MLP Class ====================
+        class TMultiLayerPerceptron {
+            constructor(inputSize, hiddenSizes, outputSize, hiddenActivation = 'sigmoid', outputActivation = 'sigmoid') {
+                this.learningRate = 0.1;
+                this.inputLayer = new TLayer();
+                this.hiddenLayers = [];
+                this.outputLayer = new TLayer();
+                this.hiddenActivation = hiddenActivation;
+                this.outputActivation = outputActivation;
+                this.optimizer = 'sgd';
+                this.dropoutRate = 0;
+                this.l2Lambda = 0;
+                this.beta1 = 0.9;
+                this.beta2 = 0.999;
+                this.timestep = 0;
+                this.dropoutMasks = [];
+                this.isTraining = true;
+                this.initialize(inputSize, hiddenSizes, outputSize);
+            }
+
+            initializeWeights(inputSize, outputSize, activation) {
+                let limit;
+                if (activation === 'relu') {
+                    limit = Math.sqrt(2.0 / inputSize);
+                } else {
+                    limit = Math.sqrt(6.0 / (inputSize + outputSize));
+                }
+                return new Array(inputSize).fill(0).map(() => (Math.random() * 2 - 1) * limit);
+            }
+
+            initialize(inputSize, hiddenSizes, outputSize) {
+                this.inputLayer = new TLayer();
+                this.inputLayer.neurons = [];
+                for (let i = 0; i < inputSize; i++) {
+                    const neuron = new TNeuron();
+                    neuron.output = 0;
+                    this.inputLayer.neurons.push(neuron);
+                }
+
+                this.hiddenLayers = [];
+                let prevSize = inputSize;
+                hiddenSizes.forEach((size, idx) => {
+                    let layer = new TLayer();
+                    layer.activationType = this.hiddenActivation;
+                    for (let i = 0; i < size; i++) {
+                        let neuron = new TNeuron();
+                        neuron.weights = this.initializeWeights(prevSize, size, this.hiddenActivation);
+                        neuron.bias = 0;
+                        neuron.m = new Array(prevSize).fill(0);
+                        neuron.v = new Array(prevSize).fill(0);
+                        layer.neurons.push(neuron);
+                        layer.dropoutMask.push(true);
+                        layer.runningMean.push(0);
+                        layer.runningVar.push(1);
+                    }
+                    this.hiddenLayers.push(layer);
+                    prevSize = size;
+                });
+
+                this.outputLayer = new TLayer();
+                this.outputLayer.activationType = this.outputActivation;
+                for (let i = 0; i < outputSize; i++) {
+                    let neuron = new TNeuron();
+                    neuron.weights = this.initializeWeights(prevSize, outputSize, this.outputActivation);
+                    neuron.bias = 0;
+                    neuron.m = new Array(prevSize).fill(0);
+                    neuron.v = new Array(prevSize).fill(0);
+                    this.outputLayer.neurons.push(neuron);
+                    this.outputLayer.dropoutMask.push(true);
+                    this.outputLayer.runningMean.push(0);
+                    this.outputLayer.runningVar.push(1);
+                }
+            }
+
+            applyDropout(layerOutputs, layerIndex) {
+                if (!this.isTraining || this.dropoutRate <= 0) {
+                    return layerOutputs;
+                }
+                const mask = layerOutputs.map(() => Math.random() > this.dropoutRate ? 1 : 0);
+                this.dropoutMasks[layerIndex] = mask;
+                const scale = 1 / (1 - this.dropoutRate);
+                return layerOutputs.map((val, idx) => val * mask[idx] * scale);
+            }
+
+            feedForward(input) {
+                for (let i = 0; i < this.inputLayer.neurons.length; i++) {
+                    this.inputLayer.neurons[i].output = input[i];
+                }
+
+                let prevOutputs = input;
+                this.dropoutMasks = [];
+
+                for (let k = 0; k < this.hiddenLayers.length; k++) {
+                    let curOutputs = [];
+                    for (let i = 0; i < this.hiddenLayers[k].neurons.length; i++) {
+                        let sum = this.hiddenLayers[k].neurons[i].bias;
+                        for (let j = 0; j < prevOutputs.length; j++) {
+                            sum += prevOutputs[j] * this.hiddenLayers[k].neurons[i].weights[j];
+                        }
+                        this.hiddenLayers[k].neurons[i].preActivation = sum;
+                        this.hiddenLayers[k].neurons[i].output = ActivationFunctions.apply(
+                            this.hiddenLayers[k].activationType, sum
+                        );
+                        curOutputs.push(this.hiddenLayers[k].neurons[i].output);
+                    }
+                    curOutputs = this.applyDropout(curOutputs, k);
+                    for (let i = 0; i < curOutputs.length; i++) {
+                        this.hiddenLayers[k].neurons[i].output = curOutputs[i];
+                    }
+                    prevOutputs = curOutputs;
+                }
+
+                let outputSums = [];
+                for (let i = 0; i < this.outputLayer.neurons.length; i++) {
+                    let sum = this.outputLayer.neurons[i].bias;
+                    for (let j = 0; j < prevOutputs.length; j++) {
+                        sum += prevOutputs[j] * this.outputLayer.neurons[i].weights[j];
+                    }
+                    this.outputLayer.neurons[i].preActivation = sum;
+                    outputSums.push(sum);
+                }
+
+                let output;
+                if (this.outputActivation === 'softmax') {
+                    output = ActivationFunctions.softmax(outputSums);
+                    for (let i = 0; i < this.outputLayer.neurons.length; i++) {
+                        this.outputLayer.neurons[i].output = output[i];
+                    }
+                } else {
+                    output = [];
+                    for (let i = 0; i < this.outputLayer.neurons.length; i++) {
+                        this.outputLayer.neurons[i].output = ActivationFunctions.apply(
+                            this.outputActivation, outputSums[i]
+                        );
+                        output.push(this.outputLayer.neurons[i].output);
+                    }
+                }
+                return output;
+            }
+
+            computeLoss(predicted, target) {
+                let loss = 0;
+                if (this.outputActivation === 'softmax') {
+                    for (let i = 0; i < target.length; i++) {
+                        const p = Math.max(EPSILON, Math.min(1 - EPSILON, predicted[i]));
+                        loss -= target[i] * Math.log(p);
+                    }
+                } else {
+                    for (let i = 0; i < target.length; i++) {
+                        loss += 0.5 * Math.pow(target[i] - predicted[i], 2);
+                    }
+                }
+                if (this.l2Lambda > 0) {
+                    let l2Sum = 0;
+                    for (let k = 0; k < this.hiddenLayers.length; k++) {
+                        for (let i = 0; i < this.hiddenLayers[k].neurons.length; i++) {
+                            for (let j = 0; j < this.hiddenLayers[k].neurons[i].weights.length; j++) {
+                                l2Sum += Math.pow(this.hiddenLayers[k].neurons[i].weights[j], 2);
+                            }
+                        }
+                    }
+                    for (let i = 0; i < this.outputLayer.neurons.length; i++) {
+                        for (let j = 0; j < this.outputLayer.neurons[i].weights.length; j++) {
+                            l2Sum += Math.pow(this.outputLayer.neurons[i].weights[j], 2);
+                        }
+                    }
+                    loss += 0.5 * this.l2Lambda * l2Sum;
+                }
+                return loss;
+            }
+
+            backPropagate(target) {
+                if (this.outputActivation === 'softmax') {
+                    let derivatives = ActivationFunctions.dSoftmax(target,
+                        this.outputLayer.neurons.map(n => n.output)
+                    );
+                    for (let i = 0; i < this.outputLayer.neurons.length; i++) {
+                        this.outputLayer.neurons[i].error = derivatives[i];
+                    }
+                } else {
+                    for (let i = 0; i < this.outputLayer.neurons.length; i++) {
+                        let o = this.outputLayer.neurons[i].output;
+                        let derivative = ActivationFunctions.applyDerivative(this.outputActivation, o);
+                        this.outputLayer.neurons[i].error = derivative * (target[i] - o);
+                    }
+                }
+
+                for (let k = this.hiddenLayers.length - 1; k >= 0; k--) {
+                    for (let i = 0; i < this.hiddenLayers[k].neurons.length; i++) {
+                        let neuron = this.hiddenLayers[k].neurons[i];
+                        let sum = 0;
+                        if (k === this.hiddenLayers.length - 1) {
+                            for (let j = 0; j < this.outputLayer.neurons.length; j++) {
+                                sum += this.outputLayer.neurons[j].error * this.outputLayer.neurons[j].weights[i];
+                            }
+                        } else {
+                            for (let j = 0; j < this.hiddenLayers[k + 1].neurons.length; j++) {
+                                sum += this.hiddenLayers[k + 1].neurons[j].error * this.hiddenLayers[k + 1].neurons[j].weights[i];
+                            }
+                        }
+                        let derivative = ActivationFunctions.applyDerivative(
+                            this.hiddenLayers[k].activationType, neuron.output
+                        );
+                        if (this.dropoutMasks[k] && this.dropoutMasks[k][i] === 0) {
+                            neuron.error = 0;
+                        } else {
+                            neuron.error = derivative * sum;
+                        }
+                    }
+                }
+            }
+
+            updateWeights(input) {
+                this.timestep++;
+                let layerOutputs = [input];
+                for (let k = 0; k < this.hiddenLayers.length; k++) {
+                    let outputs = [];
+                    for (let i = 0; i < this.hiddenLayers[k].neurons.length; i++) {
+                        outputs.push(this.hiddenLayers[k].neurons[i].output);
+                    }
+                    layerOutputs.push(outputs);
+                }
+
+                let lastHiddenOutputs = layerOutputs[layerOutputs.length - 1];
+                for (let i = 0; i < this.outputLayer.neurons.length; i++) {
+                    let neuron = this.outputLayer.neurons[i];
+                    this.updateNeuronWeights(neuron, lastHiddenOutputs, this.outputLayer.learningRate);
+                }
+
+                for (let k = this.hiddenLayers.length - 1; k >= 0; k--) {
+                    let prevLayerOutputs = layerOutputs[k];
+                    for (let i = 0; i < this.hiddenLayers[k].neurons.length; i++) {
+                        let neuron = this.hiddenLayers[k].neurons[i];
+                        this.updateNeuronWeights(neuron, prevLayerOutputs, this.hiddenLayers[k].learningRate);
+                    }
+                }
+            }
+
+            updateNeuronWeights(neuron, prevLayerOutputs, layerLR) {
+                const effectiveLR = (layerLR >= 0) ? layerLR : this.learningRate;
+                const effectiveL2 = (neuron.l2Lambda >= 0) ? neuron.l2Lambda : this.l2Lambda;
+
+                if (this.optimizer === 'adam') {
+                    this.updateWeightsAdam(neuron, prevLayerOutputs, effectiveLR, effectiveL2);
+                } else if (this.optimizer === 'rmsprop') {
+                    this.updateWeightsRMSProp(neuron, prevLayerOutputs, effectiveLR, effectiveL2);
+                } else {
+                    this.updateWeightsSGD(neuron, prevLayerOutputs, effectiveLR, effectiveL2);
+                }
+            }
+
+            updateWeightsSGD(neuron, prevLayerOutputs, lr, l2) {
+                for (let j = 0; j < neuron.weights.length; j++) {
+                    let gradient = neuron.error * prevLayerOutputs[j];
+                    if (l2 > 0) {
+                        gradient -= l2 * neuron.weights[j];
+                    }
+                    neuron.weights[j] += lr * gradient;
+                }
+                neuron.bias += lr * neuron.error;
+            }
+
+            updateWeightsAdam(neuron, prevLayerOutputs, lr, l2) {
+                const eps = 1e-8;
+                for (let j = 0; j < neuron.weights.length; j++) {
+                    let gradient = -neuron.error * prevLayerOutputs[j];
+                    if (l2 > 0) {
+                        gradient += l2 * neuron.weights[j];
+                    }
+                    neuron.m[j] = this.beta1 * neuron.m[j] + (1 - this.beta1) * gradient;
+                    neuron.v[j] = this.beta2 * neuron.v[j] + (1 - this.beta2) * gradient * gradient;
+                    const mHat = neuron.m[j] / (1 - Math.pow(this.beta1, this.timestep));
+                    const vHat = neuron.v[j] / (1 - Math.pow(this.beta2, this.timestep));
+                    neuron.weights[j] -= lr * mHat / (Math.sqrt(vHat) + eps);
+                }
+                let biasGradient = -neuron.error;
+                neuron.mBias = this.beta1 * neuron.mBias + (1 - this.beta1) * biasGradient;
+                neuron.vBias = this.beta2 * neuron.vBias + (1 - this.beta2) * biasGradient * biasGradient;
+                const mHatBias = neuron.mBias / (1 - Math.pow(this.beta1, this.timestep));
+                const vHatBias = neuron.vBias / (1 - Math.pow(this.beta2, this.timestep));
+                neuron.bias -= lr * mHatBias / (Math.sqrt(vHatBias) + 1e-8);
+            }
+
+            updateWeightsRMSProp(neuron, prevLayerOutputs, lr, l2) {
+                const eps = 1e-8;
+                const decay = 0.9;
+                for (let j = 0; j < neuron.weights.length; j++) {
+                    let gradient = -neuron.error * prevLayerOutputs[j];
+                    if (l2 > 0) {
+                        gradient += l2 * neuron.weights[j];
+                    }
+                    neuron.v[j] = decay * neuron.v[j] + (1 - decay) * gradient * gradient;
+                    neuron.weights[j] -= lr * gradient / (Math.sqrt(neuron.v[j]) + eps);
+                }
+                let biasGradient = -neuron.error;
+                neuron.vBias = decay * neuron.vBias + (1 - decay) * biasGradient * biasGradient;
+                neuron.bias -= lr * biasGradient / (Math.sqrt(neuron.vBias) + eps);
+            }
+
+            predict(input) {
+                this.isTraining = false;
+                const result = this.feedForward(input);
+                this.isTraining = true;
+                return result;
+            }
+
+            train(input, target) {
+                this.isTraining = true;
+                this.feedForward(input);
+                this.backPropagate(target);
+                this.updateWeights(input);
+            }
+
+            toJSON() {
+                return JSON.stringify({
+                    learningRate: this.learningRate,
+                    inputSize: this.inputLayer.neurons.length,
+                    hiddenSizes: this.hiddenLayers.map(l => l.neurons.length),
+                    outputSize: this.outputLayer.neurons.length,
+                    hiddenActivation: this.hiddenActivation,
+                    outputActivation: this.outputActivation,
+                    optimizer: this.optimizer,
+                    dropoutRate: this.dropoutRate,
+                    l2Lambda: this.l2Lambda,
+                    timestep: this.timestep,
+                    hiddenLayers: this.hiddenLayers.map(layer => ({
+                        activationType: layer.activationType,
+                        learningRate: layer.learningRate,
+                        neurons: layer.neurons.map(n => ({
+                            weights: n.weights,
+                            bias: n.bias,
+                            m: n.m,
+                            v: n.v,
+                            mBias: n.mBias,
+                            vBias: n.vBias,
+                            l2Lambda: n.l2Lambda,
+                            attributes: n.attributes
+                        }))
+                    })),
+                    outputLayer: {
+                        activationType: this.outputLayer.activationType,
+                        learningRate: this.outputLayer.learningRate,
+                        neurons: this.outputLayer.neurons.map(n => ({
+                            weights: n.weights,
+                            bias: n.bias,
+                            m: n.m,
+                            v: n.v,
+                            mBias: n.mBias,
+                            vBias: n.vBias,
+                            l2Lambda: n.l2Lambda,
+                            attributes: n.attributes
+                        }))
+                    }
+                });
+            }
+
+            static fromJSON(json) {
+                let obj = JSON.parse(json);
+                let mlp = new TMultiLayerPerceptron(
+                    obj.inputSize,
+                    obj.hiddenSizes,
+                    obj.outputSize,
+                    obj.hiddenActivation || 'sigmoid',
+                    obj.outputActivation || 'sigmoid'
+                );
+                mlp.learningRate = obj.learningRate;
+                mlp.optimizer = obj.optimizer || 'sgd';
+                mlp.dropoutRate = obj.dropoutRate || 0;
+                mlp.l2Lambda = obj.l2Lambda || 0;
+                mlp.timestep = obj.timestep || 0;
+
+                for (let k = 0; k < mlp.hiddenLayers.length; k++) {
+                    if (obj.hiddenLayers[k].activationType) {
+                        mlp.hiddenLayers[k].activationType = obj.hiddenLayers[k].activationType;
+                    }
+                    if (obj.hiddenLayers[k].learningRate !== undefined) {
+                        mlp.hiddenLayers[k].learningRate = obj.hiddenLayers[k].learningRate;
+                    }
+                    for (let i = 0; i < mlp.hiddenLayers[k].neurons.length; i++) {
+                        const src = obj.hiddenLayers[k].neurons[i];
+                        const dst = mlp.hiddenLayers[k].neurons[i];
+                        dst.weights = src.weights;
+                        dst.bias = src.bias;
+                        dst.m = src.m || new Array(src.weights.length).fill(0);
+                        dst.v = src.v || new Array(src.weights.length).fill(0);
+                        dst.mBias = src.mBias || 0;
+                        dst.vBias = src.vBias || 0;
+                        dst.l2Lambda = src.l2Lambda !== undefined ? src.l2Lambda : -1;
+                        dst.attributes = src.attributes || {};
+                    }
+                }
+
+                if (obj.outputLayer.activationType) {
+                    mlp.outputLayer.activationType = obj.outputLayer.activationType;
+                }
+                if (obj.outputLayer.learningRate !== undefined) {
+                    mlp.outputLayer.learningRate = obj.outputLayer.learningRate;
+                }
+                for (let i = 0; i < mlp.outputLayer.neurons.length; i++) {
+                    const src = obj.outputLayer.neurons[i];
+                    const dst = mlp.outputLayer.neurons[i];
+                    dst.weights = src.weights;
+                    dst.bias = src.bias;
+                    dst.m = src.m || new Array(src.weights.length).fill(0);
+                    dst.v = src.v || new Array(src.weights.length).fill(0);
+                    dst.mBias = src.mBias || 0;
+                    dst.vBias = src.vBias || 0;
+                    dst.l2Lambda = src.l2Lambda !== undefined ? src.l2Lambda : -1;
+                    dst.attributes = src.attributes || {};
+                }
+                return mlp;
+            }
+        }
+
+        // ==================== MLPFacade Class ====================
+        class MLPFacade {
+            constructor(mlp) {
+                this.mlp = mlp;
+            }
+
+            _getLayer(layerIdx) {
+                if (layerIdx === 0) return this.mlp.inputLayer;
+                if (layerIdx === this.mlp.hiddenLayers.length + 1) return this.mlp.outputLayer;
+                return this.mlp.hiddenLayers[layerIdx - 1];
+            }
+
+            _getNeuron(layerIdx, neuronIdx) {
+                return this._getLayer(layerIdx).neurons[neuronIdx];
+            }
+
+            _getPreviousLayerOutputs(layerIdx) {
+                if (layerIdx <= 0) return [];
+                return this._getLayer(layerIdx - 1).neurons.map(n => n.output);
+            }
+
+            // Neuron output/error
+            getNeuronOutput(layerIdx, neuronIdx) { return this._getNeuron(layerIdx, neuronIdx).output; }
+            setNeuronOutput(layerIdx, neuronIdx, value) { this._getNeuron(layerIdx, neuronIdx).output = value; }
+            getNeuronError(layerIdx, neuronIdx) { return this._getNeuron(layerIdx, neuronIdx).error; }
+            setNeuronError(layerIdx, neuronIdx, value) { this._getNeuron(layerIdx, neuronIdx).error = value; }
+
+            // Bias and weights
+            getNeuronBias(layerIdx, neuronIdx) { return this._getNeuron(layerIdx, neuronIdx).bias; }
+            setNeuronBias(layerIdx, neuronIdx, value) { this._getNeuron(layerIdx, neuronIdx).bias = value; }
+            getNeuronWeight(layerIdx, neuronIdx, weightIdx) { return this._getNeuron(layerIdx, neuronIdx).weights[weightIdx]; }
+            setNeuronWeight(layerIdx, neuronIdx, weightIdx, value) { this._getNeuron(layerIdx, neuronIdx).weights[weightIdx] = value; }
+            getNeuronWeights(layerIdx, neuronIdx) { return [...this._getNeuron(layerIdx, neuronIdx).weights]; }
+            setNeuronWeights(layerIdx, neuronIdx, weights) {
+                const n = this._getNeuron(layerIdx, neuronIdx);
+                for (let i = 0; i < Math.min(weights.length, n.weights.length); i++) n.weights[i] = weights[i];
+            }
+
+            // Layer queries
+            getLayerSize(layerIdx) { return this._getLayer(layerIdx).neurons.length; }
+            getTotalLayers() { return this.mlp.hiddenLayers.length + 2; }
+            getWeightsPerNeuron(layerIdx, neuronIdx) { return this._getNeuron(layerIdx, neuronIdx).weights.length; }
+
+            // Gradients
+            getNeuronWeightGradient(layerIdx, neuronIdx, weightIdx) {
+                const n = this._getNeuron(layerIdx, neuronIdx);
+                const prev = this._getPreviousLayerOutputs(layerIdx);
+                return (weightIdx >= 0 && weightIdx < prev.length) ? n.error * prev[weightIdx] : 0;
+            }
+            getNeuronBiasGradient(layerIdx, neuronIdx) { return this._getNeuron(layerIdx, neuronIdx).error; }
+
+            // Optimizer state
+            getNeuronOptimizerState(layerIdx, neuronIdx, param) {
+                const n = this._getNeuron(layerIdx, neuronIdx);
+                if (param === 'mBias') return n.mBias || 0;
+                if (param === 'vBias') return n.vBias || 0;
+                return 0;
+            }
+            getNeuronOptimizerStateArray(layerIdx, neuronIdx, param) {
+                const n = this._getNeuron(layerIdx, neuronIdx);
+                if (param === 'm') return n.m ? [...n.m] : [];
+                if (param === 'v') return n.v ? [...n.v] : [];
+                return [];
+            }
+
+            // Full access
+            getNeuron(layerIdx, neuronIdx) { return this._getNeuron(layerIdx, neuronIdx); }
+            getLayer(layerIdx) { return this._getLayer(layerIdx); }
+
+            // Dropout mask
+            getNeuronDropoutMask(layerIdx, neuronIdx) {
+                const layer = this._getLayer(layerIdx);
+                if (layer.dropoutMask && neuronIdx < layer.dropoutMask.length) return layer.dropoutMask[neuronIdx];
+                return true;
+            }
+            setNeuronDropoutMask(layerIdx, neuronIdx, value) {
+                const layer = this._getLayer(layerIdx);
+                if (!layer.dropoutMask) layer.dropoutMask = [];
+                while (layer.dropoutMask.length <= neuronIdx) layer.dropoutMask.push(true);
+                layer.dropoutMask[neuronIdx] = value;
+            }
+
+            // Pre-activation
+            getNeuronPreActivation(layerIdx, neuronIdx) { return this._getNeuron(layerIdx, neuronIdx).preActivation || 0; }
+            setNeuronPreActivation(layerIdx, neuronIdx, value) { this._getNeuron(layerIdx, neuronIdx).preActivation = value; }
+
+            // Running stats
+            getLayerRunningMean(layerIdx) { return this._getLayer(layerIdx).runningMean || []; }
+            getLayerRunningVar(layerIdx) { return this._getLayer(layerIdx).runningVar || []; }
+            setLayerRunningMean(layerIdx, values) { this._getLayer(layerIdx).runningMean = [...values]; }
+            setLayerRunningVar(layerIdx, values) { this._getLayer(layerIdx).runningVar = [...values]; }
+
+            // Attributes
+            setNeuronAttribute(layerIdx, neuronIdx, key, value) {
+                const n = this._getNeuron(layerIdx, neuronIdx);
+                if (!n.attributes) n.attributes = {};
+                n.attributes[key] = value;
+            }
+            getNeuronAttribute(layerIdx, neuronIdx, key) {
+                const n = this._getNeuron(layerIdx, neuronIdx);
+                return n.attributes ? (n.attributes[key] || '') : '';
+            }
+
+            // Per-layer LR
+            getLayerLearningRate(layerIdx) {
+                const layer = this._getLayer(layerIdx);
+                return (layer.learningRate >= 0) ? layer.learningRate : this.mlp.learningRate;
+            }
+            setLayerLearningRate(layerIdx, value) { this._getLayer(layerIdx).learningRate = value; }
+
+            // Per-neuron L2
+            getNeuronL2Lambda(layerIdx, neuronIdx) {
+                const n = this._getNeuron(layerIdx, neuronIdx);
+                return (n.l2Lambda >= 0) ? n.l2Lambda : this.mlp.l2Lambda;
+            }
+            setNeuronL2Lambda(layerIdx, neuronIdx, value) { this._getNeuron(layerIdx, neuronIdx).l2Lambda = value; }
+
+            // Connections
+            getNeuronIncomingConnections(layerIdx, neuronIdx) {
+                if (layerIdx === 0) return [];
+                const n = this._getNeuron(layerIdx, neuronIdx);
+                return n.weights.map((w, i) => new TConnection(layerIdx - 1, i, w));
+            }
+            getNeuronOutgoingConnections(layerIdx, neuronIdx) {
+                if (layerIdx >= this.getTotalLayers() - 1) return [];
+                const next = this._getLayer(layerIdx + 1);
+                const conns = [];
+                for (let i = 0; i < next.neurons.length; i++) {
+                    if (neuronIdx < next.neurons[i].weights.length) {
+                        conns.push(new TConnection(layerIdx + 1, i, next.neurons[i].weights[neuronIdx]));
+                    }
+                }
+                return conns;
+            }
+
+            // Dynamic topology
+            addNeuron(layerIdx) {
+                const layer = this._getLayer(layerIdx);
+                const numInputs = layerIdx === 0 ? 0 : this._getLayer(layerIdx - 1).neurons.length;
+                const limit = Math.sqrt(2.0 / Math.max(1, numInputs));
+                const neuron = new TNeuron();
+                neuron.weights = new Array(numInputs).fill(0).map(() => (Math.random() * 2 - 1) * limit);
+                neuron.m = new Array(numInputs).fill(0);
+                neuron.v = new Array(numInputs).fill(0);
+                layer.neurons.push(neuron);
+                if (!layer.dropoutMask) layer.dropoutMask = [];
+                layer.dropoutMask.push(true);
+                if (!layer.runningMean) layer.runningMean = [];
+                layer.runningMean.push(0);
+                if (!layer.runningVar) layer.runningVar = [];
+                layer.runningVar.push(1);
+
+                if (layerIdx < this.getTotalLayers() - 1) {
+                    const next = this._getLayer(layerIdx + 1);
+                    for (const n of next.neurons) {
+                        n.weights.push((Math.random() * 2 - 1) * 0.1);
+                        if (n.m) n.m.push(0);
+                        if (n.v) n.v.push(0);
+                    }
+                }
+                return layer.neurons.length - 1;
+            }
+
+            removeNeuron(layerIdx, neuronIdx) {
+                const layer = this._getLayer(layerIdx);
+                if (neuronIdx < 0 || neuronIdx >= layer.neurons.length) return;
+                layer.neurons.splice(neuronIdx, 1);
+                if (layer.dropoutMask) layer.dropoutMask.splice(neuronIdx, 1);
+                if (layer.runningMean) layer.runningMean.splice(neuronIdx, 1);
+                if (layer.runningVar) layer.runningVar.splice(neuronIdx, 1);
+
+                if (layerIdx < this.getTotalLayers() - 1) {
+                    const next = this._getLayer(layerIdx + 1);
+                    for (const n of next.neurons) {
+                        if (neuronIdx < n.weights.length) n.weights.splice(neuronIdx, 1);
+                        if (n.m && neuronIdx < n.m.length) n.m.splice(neuronIdx, 1);
+                        if (n.v && neuronIdx < n.v.length) n.v.splice(neuronIdx, 1);
+                    }
+                }
+            }
+
+            addLayer(position, size, activationType = 'sigmoid') {
+                if (position < 1 || position > this.mlp.hiddenLayers.length + 1) return -1;
+                const prevLayer = position === 1 ? this.mlp.inputLayer : this.mlp.hiddenLayers[position - 2];
+                const numInputs = prevLayer.neurons.length;
+                const newLayer = new TLayer();
+                newLayer.activationType = activationType;
+                const limit = Math.sqrt(2.0 / Math.max(1, numInputs));
+                for (let i = 0; i < size; i++) {
+                    const n = new TNeuron();
+                    n.weights = new Array(numInputs).fill(0).map(() => (Math.random() * 2 - 1) * limit);
+                    n.m = new Array(numInputs).fill(0);
+                    n.v = new Array(numInputs).fill(0);
+                    newLayer.neurons.push(n);
+                    newLayer.dropoutMask.push(true);
+                    newLayer.runningMean.push(0);
+                    newLayer.runningVar.push(1);
+                }
+                this.mlp.hiddenLayers.splice(position - 1, 0, newLayer);
+                const nextLayer = position <= this.mlp.hiddenLayers.length ? this.mlp.hiddenLayers[position] : this.mlp.outputLayer;
+                const newLimit = Math.sqrt(2.0 / size);
+                for (const n of nextLayer.neurons) {
+                    n.weights = new Array(size).fill(0).map(() => (Math.random() * 2 - 1) * newLimit);
+                    n.m = new Array(size).fill(0);
+                    n.v = new Array(size).fill(0);
+                }
+                return position;
+            }
+
+            removeLayer(layerIdx) {
+                if (layerIdx < 1 || layerIdx > this.mlp.hiddenLayers.length) return;
+                const prevLayer = layerIdx === 1 ? this.mlp.inputLayer : this.mlp.hiddenLayers[layerIdx - 2];
+                const prevSize = prevLayer.neurons.length;
+                this.mlp.hiddenLayers.splice(layerIdx - 1, 1);
+                const nextLayer = layerIdx - 1 < this.mlp.hiddenLayers.length ? this.mlp.hiddenLayers[layerIdx - 1] : this.mlp.outputLayer;
+                const limit = Math.sqrt(2.0 / Math.max(1, prevSize));
+                for (const n of nextLayer.neurons) {
+                    n.weights = new Array(prevSize).fill(0).map(() => (Math.random() * 2 - 1) * limit);
+                    n.m = new Array(prevSize).fill(0);
+                    n.v = new Array(prevSize).fill(0);
+                }
+            }
+
+            // Histograms
+            getLayerActivationHistogram(layerIdx) {
+                return this._computeHistogram(this._getLayer(layerIdx).neurons.map(n => n.output));
+            }
+            getLayerGradientHistogram(layerIdx) {
+                return this._computeHistogram(this._getLayer(layerIdx).neurons.map(n => n.error));
+            }
+            _computeHistogram(values) {
+                const hist = [];
+                if (values.length === 0) {
+                    for (let i = 0; i < HISTOGRAM_BINS; i++) hist.push(new THistogramBin(0, 0, 0));
+                    return hist;
+                }
+                let minVal = Math.min(...values), maxVal = Math.max(...values);
+                if (maxVal === minVal) maxVal = minVal + 1;
+                const binWidth = (maxVal - minVal) / HISTOGRAM_BINS;
+                for (let i = 0; i < HISTOGRAM_BINS; i++) {
+                    hist.push(new THistogramBin(minVal + i * binWidth, minVal + (i + 1) * binWidth, 0));
+                }
+                for (const v of values) {
+                    let idx = Math.floor((v - minVal) / binWidth);
+                    if (idx >= HISTOGRAM_BINS) idx = HISTOGRAM_BINS - 1;
+                    if (idx < 0) idx = 0;
+                    hist[idx].count++;
+                }
+                return hist;
+            }
+
+            // Utility
+            getNetworkTopology() {
+                const topo = [];
+                for (let l = 0; l < this.getTotalLayers(); l++) {
+                    const layer = this._getLayer(l);
+                    topo.push({ index: l, size: layer.neurons.length, activationType: layer.activationType, learningRate: this.getLayerLearningRate(l) });
+                }
+                return topo;
+            }
+            getStatistics() {
+                let totalWeights = 0, totalNeurons = 0, weightSum = 0, weightSqSum = 0;
+                for (let l = 1; l < this.getTotalLayers(); l++) {
+                    const layer = this._getLayer(l);
+                    totalNeurons += layer.neurons.length;
+                    for (const n of layer.neurons) {
+                        for (const w of n.weights) {
+                            totalWeights++;
+                            weightSum += w;
+                            weightSqSum += w * w;
+                        }
+                    }
+                }
+                const mean = totalWeights > 0 ? weightSum / totalWeights : 0;
+                const variance = totalWeights > 0 ? (weightSqSum / totalWeights) - (mean * mean) : 0;
+                return {
+                    totalLayers: this.getTotalLayers(),
+                    totalNeurons,
+                    totalWeights,
+                    meanWeight: mean,
+                    stdWeight: Math.sqrt(Math.max(0, variance)),
+                    optimizer: this.mlp.optimizer,
+                    learningRate: this.mlp.learningRate,
+                    dropoutRate: this.mlp.dropoutRate,
+                    l2Lambda: this.mlp.l2Lambda
+                };
+            }
+        }
+
+        // ==================== Global Variables ====================
+        let mlp = null;
+        let facade = null;
+        let data = [];
+
+        // ==================== UI Functions ====================
+        function createNetwork() {
+            const inputSize = parseInt(document.getElementById("inputSize").value);
+            const hiddenSizes = document.getElementById("hiddenSizes").value.split(",").map(s => parseInt(s.trim())).filter(n => !isNaN(n));
+            const outputSize = parseInt(document.getElementById("outputSize").value);
+            const learningRate = parseFloat(document.getElementById("learningRate").value);
+            const hiddenActivation = document.getElementById("hiddenActivation").value;
+            const outputActivation = document.getElementById("outputActivation").value;
+            const optimizer = document.getElementById("optimizer").value;
+            const dropoutRate = parseFloat(document.getElementById("dropoutRate").value);
+            const l2Lambda = parseFloat(document.getElementById("l2Lambda").value);
+
+            mlp = new TMultiLayerPerceptron(inputSize, hiddenSizes, outputSize, hiddenActivation, outputActivation);
+            mlp.learningRate = learningRate;
+            mlp.optimizer = optimizer;
+            mlp.dropoutRate = dropoutRate;
+            mlp.l2Lambda = l2Lambda;
+
+            facade = new MLPFacade(mlp);
+
+            document.getElementById("networkStatus").innerText = `Network created! Layers: ${facade.getTotalLayers()}, Optimizer: ${optimizer}`;
+        }
+
+        function generateTestData() {
+            const samplesPerClass = parseInt(document.getElementById("samplesPerClass").value);
+            const inputSize = parseInt(document.getElementById("inputSize").value);
+            const outputSize = parseInt(document.getElementById("outputSize").value);
+
+            data = [];
+            for (let c = 0; c < outputSize; c++) {
+                for (let i = 0; i < samplesPerClass; i++) {
+                    const input = [];
+                    const target = new Array(outputSize).fill(0);
+                    target[c] = 1;
+                    for (let j = 0; j < inputSize; j++) {
+                        if (c === 0) input.push(Math.random() * 0.5);
+                        else if (c === 1) input.push(0.5 + Math.random() * 0.5);
+                        else input.push(j % 2 === 0 ? Math.random() * 0.5 : 0.5 + Math.random() * 0.5);
+                    }
+                    data.push(new TDataPoint(input, target));
+                }
+            }
+            for (let i = data.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [data[i], data[j]] = [data[j], data[i]];
+            }
+            document.getElementById("generateStatus").innerText = `Generated ${data.length} samples`;
+        }
+
+        function trainNetwork() {
+            if (!mlp) { alert("Create network first"); return; }
+            if (data.length === 0) { alert("Generate data first"); return; }
+            const epochs = parseInt(document.getElementById("trainingEpochs").value);
+            document.getElementById("trainStatus").innerText = `Training for ${epochs} epochs...`;
+            setTimeout(() => {
+                for (let e = 0; e < epochs; e++) {
+                    for (const d of data) mlp.train(d.input, d.target);
+                }
+                document.getElementById("trainStatus").innerText = `Training complete: ${epochs} epochs`;
+            }, 10);
+        }
+
+        function trainNetworkWithProgress() {
+            if (!mlp) { alert("Create network first"); return; }
+            if (data.length === 0) { alert("Generate data first"); return; }
+            const epochs = parseInt(document.getElementById("trainingEpochs").value);
+            const progressDiv = document.getElementById("trainingProgress");
+            let epoch = 0;
+
+            function step() {
+                if (epoch >= epochs) {
+                    document.getElementById("trainStatus").innerText = `Training complete: ${epochs} epochs`;
+                    return;
+                }
+                for (const d of data) mlp.train(d.input, d.target);
+                epoch++;
+                progressDiv.innerHTML = `<div>Epoch: ${epoch}/${epochs}</div><div style="width:300px;background:#f0f0f0;border-radius:5px;"><div style="width:${(epoch/epochs)*100}%;background:#4CAF50;height:20px;border-radius:5px;"></div></div>`;
+                setTimeout(step, 0);
+            }
+
+            document.getElementById("trainStatus").innerText = `Training...`;
+            step();
+        }
+
+        function predictInput() {
+            if (!mlp) { alert("Create network first"); return; }
+            const input = document.getElementById("predictInput").value.split(",").map(Number);
+            const output = mlp.predict(input);
+            const maxIdx = output.indexOf(Math.max(...output));
+            document.getElementById("predictOutput").innerHTML = `<strong>Output:</strong> ${output.map(x => x.toFixed(4)).join(", ")}<br><strong>Predicted Class:</strong> ${maxIdx} (${(output[maxIdx]*100).toFixed(1)}%)`;
+        }
+
+        // ==================== Facade UI Functions ====================
+        function getFacadeParams() {
             return {
-                activationType: layer.activationType,
-                neurons: layer.neurons.map(function(n){
-                    return { weights: n.weights, bias: n.bias };
-                })
+                layerIdx: parseInt(document.getElementById("facadeLayerIdx").value),
+                neuronIdx: parseInt(document.getElementById("facadeNeuronIdx").value),
+                weightIdx: parseInt(document.getElementById("facadeWeightIdx").value),
+                value: parseFloat(document.getElementById("facadeSetValue").value)
             };
-        }),
-        outputLayer: {
-            activationType: this.outputLayer.activationType,
-            neurons: this.outputLayer.neurons.map(function(n){
-                return { weights: n.weights, bias: n.bias };
-            })
         }
-    });
-};
-MLP.fromJSON = function(jsonStr) {
-    var obj = JSON.parse(jsonStr);
-    var mlp = new MLP( obj.inputSize,
-        obj.hiddenSizes,
-        obj.outputSize,
-        obj.hiddenActivation,
-        obj.outputActivation
-    );
-    mlp.learningRate = obj.learningRate;
-    for (var k = 0; k < mlp.hiddenLayers.length; k++) {
-        if (obj.hiddenLayers[k].activationType) mlp.hiddenLayers[k].activationType = obj.hiddenLayers[k].activationType;
-        for (var i = 0; i < mlp.hiddenLayers[k].neurons.length; i++) {
-            mlp.hiddenLayers[k].neurons[i].weights = obj.hiddenLayers[k].neurons[i].weights;
-            mlp.hiddenLayers[k].neurons[i].bias = obj.hiddenLayers[k].neurons[i].bias;
+
+        function facadeOutput(msg) {
+            document.getElementById("facadeOutput").innerText = msg;
         }
-    }
-    if (obj.outputLayer.activationType)
-        mlp.outputLayer.activationType = obj.outputLayer.activationType;
-    for (var i = 0; i < mlp.outputLayer.neurons.length; i++) {
-        mlp.outputLayer.neurons[i].weights = obj.outputLayer.neurons[i].weights;
-        mlp.outputLayer.neurons[i].bias = obj.outputLayer.neurons[i].bias;
-    }
-    return mlp;
-};
 
-// ======= DATA HANDLING, UI & TRAINING =====
-var mlp = null;
-var data = [];
-function parseCSV(text) {
-    var lines = text.trim().split("\n");
-    var points = [];
-    for (var i = 0; i < lines.length; i++) {
-        if (!lines[i].trim()) continue;
-        var arr = lines[i].split(",").map(Number);
-        var inputSize = parseInt(document.getElementById("inputSize").value, 10);
-        var outputSize = parseInt(document.getElementById("outputSize").value, 10);
-        var input = arr.slice(0, inputSize);
-        var target = arr.slice(inputSize, inputSize + outputSize);
-        points.push(new DataPoint(input, target));
-    }
-    return points;
-}
-
-function loadCSV() {
-    var file = document.getElementById("csvFile").files[0];
-    if (!file) return;
-    var reader = new FileReader();
-    reader.onload = function(e) {
-        data = parseCSV(e.target.result);
-        document.getElementById("dataStatus").textContent = "CSV loaded: " + data.length + " records.";
-    };
-    reader.readAsText(file);
-}
-function loadCSVText() {
-    var txt = document.getElementById("csvPaste").value;
-    data = parseCSV(txt);
-    document.getElementById("dataStatus").textContent = "CSV loaded: " + data.length + " records.";
-}
-
-function generateTestData() {
-    var samplesPerClass = parseInt(document.getElementById("samplesPerClass").value, 10);
-    var inputSize = parseInt(document.getElementById("inputSize").value, 10);
-    var outputSize = parseInt(document.getElementById("outputSize").value, 10);
-    data = [];
-    for (var classIdx = 0; classIdx < outputSize; classIdx++) {
-        for (var i = 0; i < samplesPerClass; i++) {
-            var input = [];
-            var target = [];
-            // targets one-hot
-            for (var t = 0; t < outputSize; t++) target[t] = 0;
-            target[classIdx] = 1;
-            // Generate class-differentiated inputs (e.g., cluster-like)
-            for (var j = 0; j < inputSize; j++) {
-                if (classIdx === 0) input.push(Math.random() * 0.5);
-                else if (classIdx === 1) input.push(0.5 + Math.random() * 0.5);
-                else if (classIdx === 2) input.push(j % 2 === 0 ? Math.random() * 0.5 : 0.5 + Math.random() * 0.5);
-                else input.push(Math.random());
-            }
-            data.push(new DataPoint(input, target));
+        function facadeGetNeuronOutput() {
+            if (!facade) { alert("Create network first"); return; }
+            const p = getFacadeParams();
+            facadeOutput(`Neuron[${p.layerIdx}][${p.neuronIdx}].output = ${facade.getNeuronOutput(p.layerIdx, p.neuronIdx)}`);
         }
-    }
-    // Shuffle
-    for (var k = data.length - 1; k > 0; k--) {
-        var j = Math.floor(Math.random() * (k + 1));
-        var tmp = data[k]; data[k] = data[j]; data[j] = tmp;
-    }
-    document.getElementById("generateStatus").textContent = "Generated " + data.length + " records.";
-}
 
-// Build, from UI selections, a new MLP instance
-function createNetwork() {
-    var inputSize = parseInt(document.getElementById("inputSize").value, 10);
-    var hiddenSizes = document.getElementById("hiddenSizes").value.split(",").map(function(x){return parseInt(x.trim(), 10);});
-    var outputSize = parseInt(document.getElementById("outputSize").value, 10);
-    var hiddenAct = document.getElementById("hiddenActivation").value;
-    var outputAct = document.getElementById("outputActivation").value;
-    mlp = new MLP(inputSize, hiddenSizes, outputSize, hiddenAct, outputAct);
-    mlp.learningRate = parseFloat(document.getElementById("learningRate").value);
-    document.getElementById("networkStatus").textContent = "Network created!";
-}
-
-/* -- K-Fold Cross Validation: divides dataset into k groups for robust scoring, reporting average -- */
-function runKFoldValidation() {
-    var numFolds = parseInt(document.getElementById("numFolds").value, 10);
-    var validationEpochs = parseInt(document.getElementById("validationEpochs").value, 10);
-    var numSamples = data.length;
-    var foldSize = Math.floor(numSamples / numFolds);
-    var sumAccuracy = 0;
-    for (var i = 0; i < numFolds; i++) {
-        var foldMLP = MLP.fromJSON(mlp.toJSON()); // fresh for each fold
-        var testSet = data.slice(i * foldSize, (i + 1) * foldSize);
-        var trainSet = data.slice(0, i * foldSize).concat(data.slice((i + 1) * foldSize));
-        for (var ep = 0; ep < validationEpochs; ep++) {
-            for (var k = 0; k < trainSet.length; k++) {
-                foldMLP.train(trainSet[k].input, trainSet[k].target);
-            }
+        function facadeGetNeuronError() {
+            if (!facade) { alert("Create network first"); return; }
+            const p = getFacadeParams();
+            facadeOutput(`Neuron[${p.layerIdx}][${p.neuronIdx}].error = ${facade.getNeuronError(p.layerIdx, p.neuronIdx)}`);
         }
-        var correctPred = 0;
-        for (var j = 0; j < testSet.length; j++) {
-            var pred = foldMLP.predict(testSet[j].input);
-            var predictedClass = getMaxIndex(pred);
-            var actualClass = getMaxIndex(testSet[j].target);
-            if (predictedClass === actualClass) correctPred++;
+
+        function facadeGetNeuronBias() {
+            if (!facade) { alert("Create network first"); return; }
+            const p = getFacadeParams();
+            facadeOutput(`Neuron[${p.layerIdx}][${p.neuronIdx}].bias = ${facade.getNeuronBias(p.layerIdx, p.neuronIdx)}`);
         }
-        sumAccuracy += correctPred;
-    }
-    var acc = sumAccuracy / numSamples;
-    document.getElementById("evaluationResults").innerHTML = "<div class='metric'>K-Fold Accuracy: " + acc.toFixed(4) + "</div>";
-}
 
-function runAllMetrics() {
-    var outputSize = mlp.outputLayer.neurons.length;
-    var resultsHtml = "<table><tr><th>Class</th><th>Precision</th><th>Recall</th><th>F1 Score</th></tr>";
-    for (var c = 0; c < outputSize; c++) {
-        var prec = precisionScore(data, mlp, c);
-        var rec = recallScore(data, mlp, c);
-        var f1 = f1Score(prec, rec);
-        resultsHtml += "<tr><td>" + c + "</td><td>" + prec.toFixed(3) + "</td><td>" + rec.toFixed(3) + "</td><td>" + f1.toFixed(3) + "</td></tr>";
-    }
-    resultsHtml += "</table>";
-    document.getElementById("evaluationResults").innerHTML = resultsHtml;
-}
-
-/* -- Precision/Recall/F1 Calculation Utilities -- */
-function precisionScore(dataArr, model, classIdx) {
-    var tp = 0, fp = 0;
-    for (var i = 0; i < dataArr.length; i++) {
-        var pred = model.predict(dataArr[i].input);
-        var predictedClass = getMaxIndex(pred);
-        var actualClass = getMaxIndex(dataArr[i].target);
-        if (predictedClass === classIdx) {
-            if (actualClass === classIdx) tp++;
-            else fp++;
+        function facadeGetNeuronWeight() {
+            if (!facade) { alert("Create network first"); return; }
+            const p = getFacadeParams();
+            facadeOutput(`Neuron[${p.layerIdx}][${p.neuronIdx}].weights[${p.weightIdx}] = ${facade.getNeuronWeight(p.layerIdx, p.neuronIdx, p.weightIdx)}`);
         }
-    }
-    return (tp + fp) === 0 ? 0 : tp / (tp + fp);
-}
-function recallScore(dataArr, model, classIdx) {
-    var tp = 0, fn = 0;
-    for (var i = 0; i < dataArr.length; i++) {
-        var pred = model.predict(dataArr[i].input);
-        var predictedClass = getMaxIndex(pred);
-        var actualClass = getMaxIndex(dataArr[i].target);
-        if (actualClass === classIdx) {
-            if (predictedClass === classIdx) tp++;
-            else fn++;
+
+        function facadeGetAllWeights() {
+            if (!facade) { alert("Create network first"); return; }
+            const p = getFacadeParams();
+            const weights = facade.getNeuronWeights(p.layerIdx, p.neuronIdx);
+            facadeOutput(`Neuron[${p.layerIdx}][${p.neuronIdx}].weights = [\n  ${weights.map(w => w.toFixed(6)).join(",\n  ")}\n]`);
         }
-    }
-    return (tp + fn) === 0 ? 0 : tp / (tp + fn);
-}
-function f1Score(prec, rec) {
-    return (prec + rec) === 0 ? 0 : 2 * (prec * rec) / (prec + rec);
-}
 
-function getMaxIndex(arr) {
-    var maxIdx = 0;
-    for (var i = 1; i < arr.length; i++) {
-        if (arr[i] > arr[maxIdx]) maxIdx = i;
-    }
-    return maxIdx;
-}
-
-/* ======= Save/load neural model as JSON ======= */
-function saveModel() {
-    if (!mlp) return;
-    var s = mlp.toJSON();
-    var blob = new Blob([s], {type: "application/json"});
-    var a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = "mlp_model.json";
-    a.click();
-    document.getElementById("modelStatus").textContent = "Model saved!";
-}
-function loadModel() {
-    var file = document.getElementById("modelFile").files[0];
-    if (!file) return;
-    var reader = new FileReader();
-    reader.onload = function(e) {
-        mlp = MLP.fromJSON(e.target.result);
-        document.getElementById("modelStatus").textContent = "Model loaded!";
-    };
-    reader.readAsText(file);
-}
-
-/* ============= TRAIN NETWORK =============== */
-function trainNetwork() {
-    if (!mlp) return;
-    var trainEpochs = parseInt(document.getElementById("trainingEpochs").value, 10);
-    var batchSize = document.getElementById("batchSize").value;
-    var totalSamples = data.length;
-    var actualBatchSize = batchSize === 'all' ? totalSamples : parseInt(batchSize, 10);
-    for (var ep = 0; ep < trainEpochs; ep++) {
-        var shuffled = data.slice().sort(function(){return Math.random()-0.5;});
-        for (var i = 0; i < totalSamples; i += actualBatchSize) {
-            var batch = shuffled.slice(i, Math.min(i+actualBatchSize, totalSamples));
-            for (var j = 0; j < batch.length; j++)
-                mlp.train(batch[j].input, batch[j].target);
+        function facadeGetPreActivation() {
+            if (!facade) { alert("Create network first"); return; }
+            const p = getFacadeParams();
+            facadeOutput(`Neuron[${p.layerIdx}][${p.neuronIdx}].preActivation = ${facade.getNeuronPreActivation(p.layerIdx, p.neuronIdx)}`);
         }
-    }
-    document.getElementById("trainStatus").textContent = "Training complete (" + trainEpochs + " epochs)";
-}
-/* ========== Training with progress feedback (async UI) ========== */
-function trainNetworkWithProgress() {
-    if (!mlp) return;
-    var trainEpochs = parseInt(document.getElementById("trainingEpochs").value, 10);
-    var batchSize = document.getElementById("batchSize").value;
-    var totalSamples = data.length;
-    var actualBatchSize = batchSize === 'all' ? totalSamples : parseInt(batchSize, 10);
-    var ep = 0;
-    var trainStatus = document.getElementById("trainStatus");
-    var trainProgress = document.getElementById("trainingProgress");
-    trainStatus.textContent = '';
-    function doEpoch() {
-        var shuffled = data.slice().sort(function(){return Math.random()-0.5;});
-        for (var i = 0; i < totalSamples; i += actualBatchSize) {
-            var batch = shuffled.slice(i, Math.min(i+actualBatchSize, totalSamples));
-            for (var j = 0; j < batch.length; j++)
-                mlp.train(batch[j].input, batch[j].target);
-        }
-        ep++;
-        trainProgress.textContent = "Epoch " + ep + "/" + trainEpochs;
-        if (ep < trainEpochs) setTimeout(doEpoch, 30); // allow UI update
-        else trainStatus.textContent = "Training complete (" + trainEpochs + " epochs)";
-    }
-    doEpoch();
-}
 
-/* ========== Predict on manual input ========== */
-function predictInput() {
-    if (!mlp) return;
-    var vals = document.getElementById("predictInput").value.split(",").map(Number);
-    var pred = mlp.predict(vals);
-    document.getElementById("predictOutput").innerHTML = "Predicted: [" + pred.map(function(x){return x.toFixed(4);}).join(", ") + "]";
-}
-</script>
+        function facadeGetWeightGradient() {
+            if (!facade) { alert("Create network first"); return; }
+            const p = getFacadeParams();
+            facadeOutput(`WeightGradient[${p.layerIdx}][${p.neuronIdx}][${p.weightIdx}] = ${facade.getNeuronWeightGradient(p.layerIdx, p.neuronIdx, p.weightIdx)}`);
+        }
+
+        function facadeGetBiasGradient() {
+            if (!facade) { alert("Create network first"); return; }
+            const p = getFacadeParams();
+            facadeOutput(`BiasGradient[${p.layerIdx}][${p.neuronIdx}] = ${facade.getNeuronBiasGradient(p.layerIdx, p.neuronIdx)}`);
+        }
+
+        function facadeGetOptimizerM() {
+            if (!facade) { alert("Create network first"); return; }
+            const p = getFacadeParams();
+            const m = facade.getNeuronOptimizerStateArray(p.layerIdx, p.neuronIdx, 'm');
+            facadeOutput(`Optimizer M[${p.layerIdx}][${p.neuronIdx}] = [\n  ${m.map(v => v.toFixed(8)).join(",\n  ")}\n]`);
+        }
+
+        function facadeGetOptimizerV() {
+            if (!facade) { alert("Create network first"); return; }
+            const p = getFacadeParams();
+            const v = facade.getNeuronOptimizerStateArray(p.layerIdx, p.neuronIdx, 'v');
+            facadeOutput(`Optimizer V[${p.layerIdx}][${p.neuronIdx}] = [\n  ${v.map(val => val.toFixed(8)).join(",\n  ")}\n]`);
+        }
+
+        function facadeGetLayerSize() {
+            if (!facade) { alert("Create network first"); return; }
+            const p = getFacadeParams();
+            facadeOutput(`Layer[${p.layerIdx}].size = ${facade.getLayerSize(p.layerIdx)}`);
+        }
+
+        function facadeGetTotalLayers() {
+            if (!facade) { alert("Create network first"); return; }
+            facadeOutput(`Total Layers = ${facade.getTotalLayers()}`);
+        }
+
+        function facadeGetLayerLearningRate() {
+            if (!facade) { alert("Create network first"); return; }
+            const p = getFacadeParams();
+            facadeOutput(`Layer[${p.layerIdx}].learningRate = ${facade.getLayerLearningRate(p.layerIdx)}`);
+        }
+
+        function facadeGetTopology() {
+            if (!facade) { alert("Create network first"); return; }
+            const topo = facade.getNetworkTopology();
+            facadeOutput(`Network Topology:\n${JSON.stringify(topo, null, 2)}`);
+        }
+
+        function facadeGetStatistics() {
+            if (!facade) { alert("Create network first"); return; }
+            const stats = facade.getStatistics();
+            facadeOutput(`Network Statistics:\n${JSON.stringify(stats, null, 2)}`);
+        }
+
+        function facadeGetIncomingConnections() {
+            if (!facade) { alert("Create network first"); return; }
+            const p = getFacadeParams();
+            const conns = facade.getNeuronIncomingConnections(p.layerIdx, p.neuronIdx);
+            facadeOutput(`Incoming connections to [${p.layerIdx}][${p.neuronIdx}]:\n${conns.map(c => `  from [${c.fromLayerIdx}][${c.fromNeuronIdx}] weight=${c.weight.toFixed(6)}`).join("\n")}`);
+        }
+
+        function facadeGetOutgoingConnections() {
+            if (!facade) { alert("Create network first"); return; }
+            const p = getFacadeParams();
+            const conns = facade.getNeuronOutgoingConnections(p.layerIdx, p.neuronIdx);
+            facadeOutput(`Outgoing connections from [${p.layerIdx}][${p.neuronIdx}]:\n${conns.map(c => `  to [${c.fromLayerIdx}][${c.fromNeuronIdx}] weight=${c.weight.toFixed(6)}`).join("\n")}`);
+        }
+
+        function facadeAddNeuron() {
+            if (!facade) { alert("Create network first"); return; }
+            const p = getFacadeParams();
+            const newIdx = facade.addNeuron(p.layerIdx);
+            facadeOutput(`Added neuron at Layer[${p.layerIdx}][${newIdx}]\nNew layer size: ${facade.getLayerSize(p.layerIdx)}`);
+        }
+
+        function facadeRemoveNeuron() {
+            if (!facade) { alert("Create network first"); return; }
+            const p = getFacadeParams();
+            facade.removeNeuron(p.layerIdx, p.neuronIdx);
+            facadeOutput(`Removed neuron at Layer[${p.layerIdx}][${p.neuronIdx}]\nNew layer size: ${facade.getLayerSize(p.layerIdx)}`);
+        }
+
+        function facadeAddLayer() {
+            if (!facade) { alert("Create network first"); return; }
+            const p = getFacadeParams();
+            const size = parseInt(document.getElementById("newLayerSize").value);
+            const newPos = facade.addLayer(p.layerIdx, size, 'sigmoid');
+            facadeOutput(`Added layer at position ${newPos} with ${size} neurons\nTotal layers: ${facade.getTotalLayers()}`);
+        }
+
+        function facadeRemoveLayer() {
+            if (!facade) { alert("Create network first"); return; }
+            const p = getFacadeParams();
+            facade.removeLayer(p.layerIdx);
+            facadeOutput(`Removed layer at position ${p.layerIdx}\nTotal layers: ${facade.getTotalLayers()}`);
+        }
+
+        function facadeShowActivationHistogram() {
+            if (!facade) { alert("Create network first"); return; }
+            const p = getFacadeParams();
+            const hist = facade.getLayerActivationHistogram(p.layerIdx);
+            renderHistogram(hist, `Activation Histogram for Layer ${p.layerIdx}`);
+        }
+
+        function facadeShowGradientHistogram() {
+            if (!facade) { alert("Create network first"); return; }
+            const p = getFacadeParams();
+            const hist = facade.getLayerGradientHistogram(p.layerIdx);
+            renderHistogram(hist, `Gradient Histogram for Layer ${p.layerIdx}`);
+        }
+
+        function renderHistogram(hist, title) {
+            const maxCount = Math.max(...hist.map(b => b.count), 1);
+            const bars = hist.map(b => {
+                const height = (b.count / maxCount) * 100;
+                return `<div class="histogram-bar" style="height:${height}%" title="${b.rangeMin.toFixed(4)} to ${b.rangeMax.toFixed(4)}: ${b.count}"></div>`;
+            }).join("");
+            document.getElementById("histogramDisplay").innerHTML = `<strong>${title}</strong><div class="histogram-container">${bars}</div>`;
+        }
+
+        function facadeSetNeuronBias() {
+            if (!facade) { alert("Create network first"); return; }
+            const p = getFacadeParams();
+            facade.setNeuronBias(p.layerIdx, p.neuronIdx, p.value);
+            facadeOutput(`Set Neuron[${p.layerIdx}][${p.neuronIdx}].bias = ${p.value}`);
+        }
+
+        function facadeSetNeuronWeight() {
+            if (!facade) { alert("Create network first"); return; }
+            const p = getFacadeParams();
+            facade.setNeuronWeight(p.layerIdx, p.neuronIdx, p.weightIdx, p.value);
+            facadeOutput(`Set Neuron[${p.layerIdx}][${p.neuronIdx}].weights[${p.weightIdx}] = ${p.value}`);
+        }
+
+        function facadeSetLayerLearningRate() {
+            if (!facade) { alert("Create network first"); return; }
+            const p = getFacadeParams();
+            facade.setLayerLearningRate(p.layerIdx, p.value);
+            facadeOutput(`Set Layer[${p.layerIdx}].learningRate = ${p.value}`);
+        }
+
+        function facadeSetNeuronL2Lambda() {
+            if (!facade) { alert("Create network first"); return; }
+            const p = getFacadeParams();
+            facade.setNeuronL2Lambda(p.layerIdx, p.neuronIdx, p.value);
+            facadeOutput(`Set Neuron[${p.layerIdx}][${p.neuronIdx}].l2Lambda = ${p.value}`);
+        }
+    </script>
 </body>
+
 </html>
